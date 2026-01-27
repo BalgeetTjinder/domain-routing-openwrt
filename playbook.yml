@@ -20,25 +20,23 @@
     nano: true
 
     # === VLESS + Reality ===
-    # Данные взять из S-UI: Inbounds → vless-reality → Client → CONFIG
     vless_enabled: true
-    vless_server: "79.137.195.239"   # IP твоего VPS
+    vless_server: "79.137.195.239"
     vless_port: 443
-    vless_uuid: "ВСТАВЬ_UUID_СЮДА"   # UUID клиента из S-UI
-    vless_sni: "www.microsoft.com"   # SNI (Dest) из настроек Reality
+    vless_uuid: "d8acbbe7-b7fd-485c-c04a-4b6b4c480112"
+    vless_sni: "www.microsoft.com"
     vless_fingerprint: "chrome"
-    vless_public_key: "ВСТАВЬ_PUBLIC_KEY_СЮДА"  # Public Key из S-UI
-    vless_short_id: "ВСТАВЬ_SHORT_ID_СЮДА"      # Short ID из S-UI
+    vless_public_key: "UxbZ9OP76wbENt5g1PBx_QcHi-RnNW_8HH54GtjmZXU"
+    vless_short_id: "92a9b477"
 
     # === Hysteria 2 ===
-    # Данные взять из S-UI: Inbounds → hysteria2 → Client
     hysteria2_enabled: true
-    hysteria2_server: "79.137.195.239"  # IP твоего VPS
+    hysteria2_server: "79.137.195.239"
     hysteria2_port: 8443
-    hysteria2_password: "ВСТАВЬ_ПАРОЛЬ_СЮДА"  # Пароль клиента из S-UI
-    hysteria2_sni: "dev.milostyle.online"     # Твой домен
-    hysteria2_up_mbps: 100    # Скорость upload (как на сервере)
-    hysteria2_down_mbps: 100  # Скорость download (как на сервере)
+    hysteria2_password: "x0nHAG5ol7"
+    hysteria2_sni: "dev.milostyle.online"
+    hysteria2_up_mbps: 100
+    hysteria2_down_mbps: 100
 
   roles:
     - gekmihesg.openwrt
