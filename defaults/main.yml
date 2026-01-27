@@ -3,17 +3,14 @@
   list_subnet: false
   list_ip: false
   list_community: false
-  tunnel: wg
-  dns_encrypt: false
+  tunnel: singbox
+  dns_encrypt: stubby
   country: russia-inside
   nano: true
-  wg_access: false
-
-  wg_listen_port: 51820
 
   # Sing-box protocol selection
   # Options: vless-reality, hysteria2, multi (both)
-  singbox_protocol: vless-reality
+  singbox_protocol: multi
 
   # VLESS + Reality settings
   vless_enabled: true
@@ -26,7 +23,7 @@
   vless_short_id: ""
 
   # Hysteria 2 settings
-  hysteria2_enabled: false
+  hysteria2_enabled: true
   hysteria2_server: ""
   hysteria2_port: 8443
   hysteria2_password: ""

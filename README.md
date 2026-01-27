@@ -1,94 +1,31 @@
-[English role README](https://github.com/itdoginfo/domain-routing-openwrt/blob/master/README.EN.md)
+# Domain Routing OpenWRT
 
-# Описание
-Shell скрипт и [роль для Ansible](https://galaxy.ansible.com/ui/standalone/roles/itdoginfo/domain_routing_openwrt). Автоматизируют настройку роутера на OpenWrt для роутинга по доменам и спискам IP-адресов.
+Ansible роль для настройки роутера на OpenWrt для точечной маршрутизации по доменам через Sing-box (VLESS Reality / Hysteria 2).
 
-Полное описание происходящего:
-- [Статья на хабре](https://habr.com/ru/articles/767464/)
-- [Копия в моём блоге](https://itdog.info/tochechnyj-obhod-blokirovok-po-domenam-na-routere-s-openwrt/)
+## Возможности
 
-# Скрипт для установки
-```
-sh <(wget -O - https://raw.githubusercontent.com/itdoginfo/domain-routing-openwrt/master/getdomains-install.sh)
-```
+- **VLESS + Reality** — максимальная устойчивость к блокировкам, маскировка под легитимный HTTPS
+- **Hysteria 2** — быстрый протокол на QUIC/UDP с алгоритмом Brutal против throttling
+- **Маршрутизация по доменам** — только заблокированные домены идут через VPN
+- **DNS шифрование** — Stubby или DNSCrypt
 
-# Скрипт для удаления
-```
-sh <(wget -O - https://raw.githubusercontent.com/itdoginfo/domain-routing-openwrt/refs/heads/master/getdomains-uninstall.sh)
-```
+## Требования
 
-## AmneziaWG
-Через этот скрипт можно установить Amnezia wireguard. Скрипт проверяет наличие пакетов под вашу платформу в [стороннем репозитории](https://github.com/Slava-Shchipunov/awg-openwrt/releases), так как в официальном репозитории OpenWRT они отсутствуют, и автоматически их устанавливает.
+- OpenWrt 23.05+ или 24.10+
+- Ansible 2.10+
+- Настроенный VPN сервер (S-UI / Sing-box)
 
-Если вам нужно установить только AWG, воспользуйтесь скриптом в репозитории: https://github.com/Slava-Shchipunov/awg-openwrt
+## Установка
 
-Если подходящих пакетов нет, перед настройкой необходимо будет самостоятельно [собрать бинарники AmneziaWG](https://github.com/itdoginfo/domain-routing-openwrt/wiki/Amnezia-WG-Build) для своего устройства и установить их.
-
-## Скрипт для проверки конфигурации
-Написан для OpenWrt 23.05 и 22.03. На 21.02 работает только половина проверок.
-
-[x] - не обязательно означает, что эта часть не работает. Но это повод для ручной проверки.
-
-### Запуск
-```
-wget -O - https://raw.githubusercontent.com/itdoginfo/domain-routing-openwrt/master/getdomains-check.sh | sh
-```
-
-По-умолчанию запускается на русском языке. Если нужно запустить на английском, то после `sh` нужно добавить `-s --lang en`. Аналогично для проверок на подмену DNS и создания дампа.
-
-```
-wget -O - https://raw.githubusercontent.com/itdoginfo/domain-routing-openwrt/master/getdomains-check.sh | sh -s --lang en
-```
-
-### Запустить с проверкой на подмену DNS
-```
-wget -O - https://raw.githubusercontent.com/itdoginfo/domain-routing-openwrt/master/getdomains-check.sh | sh -s dns
-```
-
-### Запустить с созданием dump
-Все чувствительные переменные затираются.
-
-```
-wget -O - https://raw.githubusercontent.com/itdoginfo/domain-routing-openwrt/master/getdomains-check.sh | sh -s dump
-```
-
-Поиск ошибок вручную: https://habr.com/ru/post/702388/
-
-# Ansible
-Установить роль
-```
+```bash
 ansible-galaxy role install itdoginfo.domain_routing_openwrt
 ```
 
-Примеры playbooks
+## Примеры playbook
 
-Wireguard, only domains, stubby, Russia, acces from wg network (пример 192.168.80.0/24), host 192.168.1.1
-```
-- hosts: 192.168.1.1
-  remote_user: root
+### VLESS + Reality (рекомендуется)
 
-  roles:
-    - itdoginfo.domain_routing_openwrt
-
-  vars:
-    tunnel: wg
-    dns_encrypt: stubby
-    country: russia-inside
-
-    wg_server_address: wg-server-host
-    wg_private_key: privatekey-client
-    wg_public_key: publickey-client
-    wg_preshared_key: presharedkey-client
-    wg_listen_port: 51820
-    wg_client_port: 51820
-    wg_client_address: ip-client
-
-    wg_access: true
-    wg_access_network: wg-network
-```
-
-Sing-box с VLESS + Reality (рекомендуется для обхода блокировок)
-```
+```yaml
 - hosts: 192.168.1.1
   remote_user: root
 
@@ -101,8 +38,7 @@ Sing-box с VLESS + Reality (рекомендуется для обхода бл
     dns_encrypt: stubby
     country: russia-inside
 
-    # VLESS + Reality настройки (получить на сервере)
-    vless_server: "your-vps-ip"
+    vless_server: "79.137.195.239"
     vless_port: 443
     vless_uuid: "your-uuid"
     vless_sni: "www.microsoft.com"
@@ -111,8 +47,9 @@ Sing-box с VLESS + Reality (рекомендуется для обхода бл
     vless_short_id: "your-short-id"
 ```
 
-Sing-box с Hysteria 2 (быстрый, устойчив к throttling)
-```
+### Hysteria 2
+
+```yaml
 - hosts: 192.168.1.1
   remote_user: root
 
@@ -125,17 +62,17 @@ Sing-box с Hysteria 2 (быстрый, устойчив к throttling)
     dns_encrypt: stubby
     country: russia-inside
 
-    # Hysteria 2 настройки
-    hysteria2_server: "your-vps-ip"
+    hysteria2_server: "79.137.195.239"
     hysteria2_port: 8443
     hysteria2_password: "your-password"
-    hysteria2_sni: "your-domain.com"
+    hysteria2_sni: "dev.milostyle.online"
     hysteria2_up_mbps: 100
     hysteria2_down_mbps: 100
 ```
 
-Sing-box с обоими протоколами (VLESS + Hysteria2 с возможностью переключения)
-```
+### Оба протокола (с возможностью переключения)
+
+```yaml
 - hosts: 192.168.1.1
   remote_user: root
 
@@ -150,7 +87,7 @@ Sing-box с обоими протоколами (VLESS + Hysteria2 с возмо
 
     # VLESS + Reality
     vless_enabled: true
-    vless_server: "your-vps-ip"
+    vless_server: "79.137.195.239"
     vless_port: 443
     vless_uuid: "your-uuid"
     vless_sni: "www.microsoft.com"
@@ -160,154 +97,64 @@ Sing-box с обоими протоколами (VLESS + Hysteria2 с возмо
 
     # Hysteria 2
     hysteria2_enabled: true
-    hysteria2_server: "your-vps-ip"
+    hysteria2_server: "79.137.195.239"
     hysteria2_port: 8443
     hysteria2_password: "your-password"
-    hysteria2_sni: "your-domain.com"
+    hysteria2_sni: "dev.milostyle.online"
     hysteria2_up_mbps: 100
     hysteria2_down_mbps: 100
 ```
 
-Sing-box (legacy/Shadowsocks) - старый вариант
-```
-- hosts: 192.168.1.1
-  remote_user: root
+## Inventory
 
-  roles:
-    - itdoginfo.domain_routing_openwrt
-
-  vars:
-    tunnel: singbox
-    dns_encrypt: stubby
-    country: russia-inside
-
-  tasks:
-  - name: sing-box config
-    template:
-      src: "templates/openwrt-sing-box-json.j2"
-      dest: "/etc/sing-box/config.json"
-      mode: 0644
-    notify:
-      - Restart sing-box
-      - Restart network
-```
-
-В inventory файле роутер обязательно должен быть в группе `[openwrt]`
-```
+```ini
 [openwrt]
 192.168.1.1
 ```
 
-Для работы Ansible c OpenWrt необходимо, чтоб было выполнено одно из условий:
-- Отсутствие пароля для root (не рекомендуется)
-- Настроен доступ через публичный SSH-ключ в [конфиге dropbear](https://openwrt.org/docs/guide-user/security/dropbear.public-key.auth)
+## Переменные
 
-После выполнения playbook роутер сразу начнёт роутить необходмые домены в туннель/прокси.
+### Основные
 
-Если у вас были ошибки и они исправились при повторном запуске playbook, но при этом роутинг не заработал, сделайте рестарт сети и скрипта:
-```
+| Переменная | Описание | По умолчанию |
+|------------|----------|--------------|
+| `tunnel` | Тип туннеля | `singbox` |
+| `singbox_protocol` | Протокол: `vless-reality`, `hysteria2`, `multi` | `multi` |
+| `dns_encrypt` | DNS шифрование: `stubby`, `dnscrypt`, `false` | `stubby` |
+| `country` | Список доменов: `russia-inside`, `russia-outside`, `ukraine` | `russia-inside` |
+
+### VLESS + Reality
+
+| Переменная | Описание |
+|------------|----------|
+| `vless_server` | IP адрес VPN сервера |
+| `vless_port` | Порт (обычно 443) |
+| `vless_uuid` | UUID клиента |
+| `vless_sni` | SNI для маскировки |
+| `vless_fingerprint` | Fingerprint (chrome, firefox, safari) |
+| `vless_public_key` | Публичный ключ Reality |
+| `vless_short_id` | Short ID |
+
+### Hysteria 2
+
+| Переменная | Описание |
+|------------|----------|
+| `hysteria2_server` | IP адрес VPN сервера |
+| `hysteria2_port` | Порт (обычно 8443) |
+| `hysteria2_password` | Пароль |
+| `hysteria2_sni` | Домен для TLS |
+| `hysteria2_up_mbps` | Upload скорость для Brutal |
+| `hysteria2_down_mbps` | Download скорость для Brutal |
+
+## После установки
+
+```bash
 service network restart
 service getdomains start
 ```
 
-Тестировалось с
-- Ansible 2.10.8
-- OpenWrt 21.02.7
-- OpenWrt 22.03.5
-- OpenWrt 23.05.2
-- OpenWrt 24.10.x
+## Проверка
 
-## Выбор туннеля
-- **Wireguard** — настраивается автоматически через переменные
-- **OpenVPN** — устанавливается пакет, настраивается роутинг и зона. Само подключение нужно [настроить вручную](https://itdog.info/nastrojka-klienta-openvpn-na-openwrt/)
-- **Sing-box** — устанавливает пакет, настраивается роутинг и зона. Поддерживает современные протоколы:
-  - **VLESS + Reality** — максимальная устойчивость к блокировкам, маскировка под легитимный HTTPS
-  - **Hysteria 2** — быстрый протокол на QUIC/UDP с алгоритмом Brutal против throttling
-  - **Multi** — оба протокола с возможностью переключения
-  - Legacy (Shadowsocks и др.) — требует ручной настройки конфига
-- **tun2socks** — настраивается только роутинг и зона, остальное вручную
-
-Для **tunnel** возможные значения:
-- wg
-- openvpn
-- singbox
-- tun2socks
-
-### Sing-box протоколы
-
-При использовании `tunnel: singbox` можно указать **singbox_protocol**:
-- `vless-reality` — VLESS + Reality (рекомендуется)
-- `hysteria2` — Hysteria 2
-- `multi` — оба протокола
-- не указывать — legacy режим, требует ручной настройки config.json
-
-В случае использования WG:
+```bash
+wget -O - https://raw.githubusercontent.com/itdoginfo/domain-routing-openwrt/master/getdomains-check.sh | sh
 ```
-    wg_server_address: wg-server-host
-    wg_private_key: privatekey-client
-    wg_public_key: publickey-client
-    wg_preshared_key: presharedkey-client
-    wg_client_port: 51820
-    wg_client_address: ip-client
-```
-
-Если ваш wg сервер не использует `preshared_key`, то просто не задавайте её.
-
-**wg_access** и **wg_access_network** для доступа к роутеру через WG. Переменная wg_access_network должна иметь значение подсети, например 192.168.10.0/24.
-```
-    wg_access_network: wg-network
-    wg_access: true
-```
-
-## Шифрование DNS
-Если ваш провайдер не подменяет DNS-запросы, ничего устанавливать не нужно.
-
-Для **dns_encrypt** три возможных значения:
-- dnscrypt
-- stubby
-- false/закомментировано - пропуск, ничего не устанавливается и не настраивается
-
-## Выбор страны
-Выбор списка доменов.
-Для **county** три [возможных значения](https://github.com/itdoginfo/allow-domains):
-- russia-inside
-- russia-outside
-- ukraine
-
-## Списки IP-адресов
-Списки IP-адресов берутся с [antifilter.download](https://antifilter.download/)
-Переменные **list_** обозначают, какие списки нужно установить. true - установить, false - не устанавливать и удалить, если уже есть
-
-Доступные переменные
-```
-  list_domains: true
-  list_subnet: false
-  list_ip: falses
-  list_community: false
-```
-
-Я советую использовать только домены
-```
-    list_domains: true
-```
-Если вам требуются списки IP-адресов, они также поддерживаются.
-
-При использовании **list_domains** нужен пакет dnsmasq-full.
-
-Для 23.05 dnsmasq-full устанавливается автоматически.
-
-Для OpenWrt 22.03 версия dnsmasq-full должна быть => 2.87, её нет в официальном репозитории, но можно установить из dev репозитория. Если это условие не выполнено, плейбук завершится с ошибкой.
-
-[Инструкция для OpenWrt 22.03](https://t.me/itdoginf/12)
-
-[Инструкция для OpenWrt 21.02](https://t.me/itdoginfo/8)
-
-## Текстовый редактор nano
-Устанавливается по умолчанию. Можно выключить
-```
-  nano: false
-```
-
----
-
-[Telegram-канал с обновлениями](https://t.me/+lW1HmBO_Fa00M2Iy)
