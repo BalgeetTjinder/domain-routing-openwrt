@@ -4,8 +4,6 @@
 # Форк: github.com/BalgeetTjinder/domain-routing-openwrt
 # Оригинал: github.com/itdoginfo/domain-routing-openwrt
 
-set -e
-
 # Цвета
 GREEN='\033[32;1m'
 RED='\033[31;1m'
@@ -35,11 +33,13 @@ check_system() {
 # Проверка репозитория
 check_repo() {
     print_green "Проверка доступности репозитория OpenWrt..."
-    opkg update 2>&1 | grep -q "Failed to download" && {
+    OPKG_OUTPUT=$(opkg update 2>&1)
+    if echo "$OPKG_OUTPUT" | grep -q "Failed to download"; then
         print_red "opkg недоступен. Проверь интернет или дату."
         print_red "Команда для синхронизации времени: ntpd -p ptbtime1.ptb.de"
         exit 1
-    }
+    fi
+    print_green "Репозиторий доступен"
 }
 
 # Установка пакетов
