@@ -24,6 +24,12 @@
       name: dnscrypt-proxy
       state: restarted
       enabled: yes
+
+  - name: Restart stubby
+    service:
+      name: stubby
+      state: restarted
+      enabled: yes
       
   - name: Restart dnsmasq
     service:

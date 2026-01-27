@@ -2,17 +2,13 @@
 # Точечная маршрутизация через Sing-box (VLESS Reality + Hysteria 2)
 #
 # Использование:
-#   ansible-playbook -i inventory.ini playbook.yml
-#
-# Перед запуском:
-#   1. Заполни данные ниже (из S-UI панели)
-#   2. Настрой SSH доступ к роутеру (ключ или пароль)
+#   1. Установи зависимость: ansible-galaxy role install gekmihesg.openwrt
+#   2. Заполни данные ниже (из S-UI панели)
+#   3. Запусти: ansible-playbook -i inventory.ini playbook.yml
 
 - hosts: router
   remote_user: root
-
-  roles:
-    - .  # Используем локальную роль из текущей директории
+  gather_facts: yes
 
   vars:
     # === Основные настройки ===
@@ -20,6 +16,8 @@
     singbox_protocol: multi          # multi = оба протокола с переключением
     dns_encrypt: stubby              # Шифрование DNS (stubby/dnscrypt/false)
     country: russia-inside           # Список доменов для обхода
+    list_domains: true
+    nano: true
 
     # === VLESS + Reality ===
     # Данные взять из S-UI: Inbounds → vless-reality → Client → CONFIG
@@ -41,3 +39,45 @@
     hysteria2_sni: "dev.milostyle.online"     # Твой домен
     hysteria2_up_mbps: 100    # Скорость upload (как на сервере)
     hysteria2_down_mbps: 100  # Скорость download (как на сервере)
+
+  roles:
+    - gekmihesg.openwrt
+
+  tasks:
+    - include_tasks: tasks/main.yml
+
+  handlers:
+    - name: Restart sing-box
+      service:
+        name: sing-box
+        state: restarted
+
+    - name: Restart network
+      service:
+        name: network
+        state: restarted
+
+    - name: Restart firewall
+      service:
+        name: firewall
+        state: restarted
+
+    - name: Run getdomains script
+      shell: /etc/init.d/getdomains start
+
+    - name: Restart dnscrypt-proxy
+      service:
+        name: dnscrypt-proxy
+        state: restarted
+        enabled: yes
+
+    - name: Restart stubby
+      service:
+        name: stubby
+        state: restarted
+        enabled: yes
+
+    - name: Restart dnsmasq
+      service:
+        name: dnsmasq
+        state: restarted

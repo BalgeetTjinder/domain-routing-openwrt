@@ -180,6 +180,13 @@
     notify:
       - Restart firewall
 
+  - name: enable and start sing-box
+    service:
+      name: sing-box
+      state: started
+      enabled: yes
+    when: tunnel == "singbox"
+
 # Configure network
        
   - name: set rule mark0x1
@@ -279,6 +286,8 @@
       name: stubby
       state: present
     when: dns_encrypt == "stubby"
+    notify:
+      - Restart stubby
 
   - name: edit dhcp config for stubby
     lineinfile:
