@@ -44,7 +44,7 @@
       state: present
     loop:
         - sing-box
-    when: tunnel == "singbox" and ansible_distribution_major_version >= "23"
+    when: tunnel == "singbox" and (ansible_distribution_major_version | int) >= 23
 
   - name: install curl
     opkg:
@@ -65,12 +65,11 @@
     opkg:
       name: ipset
       state: present
-    when: ansible_distribution_major_version < "22"
+    when: (ansible_distribution_major_version | int) < 22
 
   - name: install dnsmasq-full (23)
-    shell: opkg update && cd /tmp/ && opkg download dnsmasq-full && opkg remove dnsmasq && opkg install dnsmasq-full --cache /tmp/ && [ -f /etc/config/dhcp-opkg ] && cp etc/config/dhcp /etc/config/dhcp-old && mv /etc/config/dhcp-opkg /etc/config/dhcp
-    when: ansible_distribution_major_version >= "23" and list_domains and not dnsmasqfull_version.stdout
-    ignore_errors: true
+    shell: opkg update && cd /tmp/ && opkg download dnsmasq-full && opkg remove dnsmasq && opkg install dnsmasq-full --cache /tmp/ && [ -f /etc/config/dhcp-opkg ] && cp /etc/config/dhcp /etc/config/dhcp-old && mv /etc/config/dhcp-opkg /etc/config/dhcp
+    when: (ansible_distribution_major_version | int) >= 23 and list_domains and not dnsmasqfull_version.stdout
 
   - name: set confdir for dnsmasq
     uci: 
@@ -78,7 +77,7 @@
       key: dhcp.@dnsmasq[0]
       value:
         confdir: "/tmp/dnsmasq.d"
-    when: ansible_distribution_major_version >= 24
+    when: (ansible_distribution_major_version | int) >= 24
     notify:
       - Restart dnsmasq  
 
@@ -249,17 +248,47 @@
         device: tun0
         family: ipv4
     when: tunnel == "singbox"
-    failed_when: ansible_distribution_major_version < "22"
+    failed_when: (ansible_distribution_major_version | int) < 22
     notify:
       - Restart firewall
 
-  - name: template for sing-box.json
+  - name: template for sing-box.json (legacy/shadowsocks)
     template:
       src: "sing-box-json.j2"
       dest: "/etc/sing-box/config.json"
       mode: 0644
-    when: tunnel == "singbox"
-    failed_when: ansible_distribution_major_version < "22"
+    when: tunnel == "singbox" and singbox_protocol is not defined
+    failed_when: (ansible_distribution_major_version | int) < 22
+
+  - name: template for sing-box.json (VLESS + Reality)
+    template:
+      src: "sing-box-vless-reality.j2"
+      dest: "/etc/sing-box/config.json"
+      mode: 0644
+    when: tunnel == "singbox" and singbox_protocol == "vless-reality"
+    failed_when: (ansible_distribution_major_version | int) < 22
+    notify:
+      - Restart sing-box
+
+  - name: template for sing-box.json (Hysteria 2)
+    template:
+      src: "sing-box-hysteria2.j2"
+      dest: "/etc/sing-box/config.json"
+      mode: 0644
+    when: tunnel == "singbox" and singbox_protocol == "hysteria2"
+    failed_when: (ansible_distribution_major_version | int) < 22
+    notify:
+      - Restart sing-box
+
+  - name: template for sing-box.json (Multi - VLESS + Hysteria2)
+    template:
+      src: "sing-box-multi.j2"
+      dest: "/etc/sing-box/config.json"
+      mode: 0644
+    when: tunnel == "singbox" and singbox_protocol == "multi"
+    failed_when: (ansible_distribution_major_version | int) < 22
+    notify:
+      - Restart sing-box
 
   - name: template for config/sing-box
     template:
@@ -267,7 +296,7 @@
       dest: "/etc/config/sing-box"
       mode: 0600
     when: tunnel == "singbox"
-    failed_when: ansible_distribution_major_version < "22"
+    failed_when: (ansible_distribution_major_version | int) < 22
 
 # Configure OpenVPN, tun2socks
 
@@ -355,7 +384,7 @@
          match: dst_net
          storage: hash
          loadfile: /tmp/lst/subnet.lst
-    when: ansible_distribution_major_version < "22" and list_subnet
+    when: (ansible_distribution_major_version | int) < 22 and list_subnet
          
   - name: add ipset for ip (<22)
     uci:
@@ -370,7 +399,7 @@
          loadfile: /tmp/lst/ip.lst
          hashsize: 9900000
          maxelem: 9900000
-    when: ansible_distribution_major_version < "22" and list_ip
+    when: (ansible_distribution_major_version | int) < 22 and list_ip
 
   - name: add ipset for community (<22)
     uci:
@@ -385,7 +414,7 @@
          loadfile: /tmp/lst/community.lst
          hashsize: 9900000
          maxelem: 9900000
-    when: ansible_distribution_major_version < "22" and list_community
+    when: (ansible_distribution_major_version | int) < 22 and list_community
 
   - name: add nfset for subnet (22)
     uci:
@@ -397,7 +426,7 @@
        value:
          match: dst_net
          loadfile: /tmp/lst/subnet.lst
-    when: ansible_distribution_major_version >= "22" and list_subnet
+    when: (ansible_distribution_major_version | int) >= 22 and list_subnet
          
   - name: add nfset for ip (22)
     uci:
@@ -409,7 +438,7 @@
        value:
          match: dst_net
          loadfile: /tmp/lst/ip.lst
-    when: ansible_distribution_major_version >= "22" and list_ip
+    when: (ansible_distribution_major_version | int) >= 22 and list_ip
 
   - name: add nfset for community (22)
     uci:
@@ -421,7 +450,7 @@
        value:
          match: dst_net
          loadfile: /tmp/lst/community.lst
-    when: ansible_distribution_major_version >= "22" and list_community
+    when: (ansible_distribution_major_version | int) >= 22 and list_community
 
   - name: add ipset for domains (<22). If failed, repeat playbook. If failed is repeated check dnsmasq-full. 
     uci:
@@ -433,7 +462,7 @@
        value:
          match: dst_net
          storage: hash
-    when: ansible_distribution_major_version < "22" and list_domains
+    when: (ansible_distribution_major_version | int) < 22 and list_domains
 
   - name: add nfset for domains (>=22). If failed, repeat playbook. If failed is repeated check dnsmasq-full.
     uci:
@@ -444,7 +473,7 @@
          name: vpn_domains
        value:
          match: dst_net
-    when: ansible_distribution_major_version >= "22" and list_domains
+    when: (ansible_distribution_major_version | int) >= 22 and list_domains
 
   - name: add mark rule vpn_subnet
     uci:
@@ -512,7 +541,7 @@
          set_mark: "0x1"
          target: MARK
          family: ipv4
-    when: (ansible_distribution_major_version < "22" and list_domains) or (ansible_distribution_major_version >= "22" and list_domains)
+    when: ((ansible_distribution_major_version | int) < 22 and list_domains) or ((ansible_distribution_major_version | int) >= 22 and list_domains)
 
   - name: wg access route
     uci:
@@ -674,7 +703,7 @@
     notify:
       - Restart firewall
 
-    - name: uci commit dhcp
+  - name: uci commit dhcp
     uci:
       command: commit
       config: dhcp

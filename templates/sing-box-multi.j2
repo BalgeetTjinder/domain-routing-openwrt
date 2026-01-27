@@ -1,0 +1,116 @@
+{
+  "log": {
+    "level": "info",
+    "timestamp": true
+  },
+  "dns": {
+    "servers": [
+      {
+        "tag": "google",
+        "address": "tls://8.8.8.8"
+      },
+      {
+        "tag": "local",
+        "address": "local",
+        "detour": "direct"
+      }
+    ],
+    "rules": [
+      {
+        "outbound": "any",
+        "server": "local"
+      }
+    ],
+    "strategy": "ipv4_only"
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "interface_name": "tun0",
+      "address": ["172.16.250.1/30"],
+      "mtu": 1400,
+      "auto_route": false,
+      "strict_route": false,
+      "sniff": true,
+      "sniff_override_destination": true
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "proxy",
+      "outbounds": [
+        "vless-reality",
+        "hysteria2",
+        "direct"
+      ],
+      "default": "vless-reality"
+    },
+{% if vless_enabled | default(true) %}
+    {
+      "type": "vless",
+      "tag": "vless-reality",
+      "server": "{{ vless_server }}",
+      "server_port": {{ vless_port | default(443) }},
+      "uuid": "{{ vless_uuid }}",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "{{ vless_sni | default('www.microsoft.com') }}",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "{{ vless_fingerprint | default('chrome') }}"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "{{ vless_public_key }}",
+          "short_id": "{{ vless_short_id }}"
+        }
+      }
+    },
+{% endif %}
+{% if hysteria2_enabled | default(true) %}
+    {
+      "type": "hysteria2",
+      "tag": "hysteria2",
+      "server": "{{ hysteria2_server }}",
+      "server_port": {{ hysteria2_port | default(8443) }},
+      "password": "{{ hysteria2_password }}",
+      "tls": {
+        "enabled": true,
+        "server_name": "{{ hysteria2_sni }}",
+        "alpn": ["h3"]
+      },
+      "up_mbps": {{ hysteria2_up_mbps | default(100) }},
+      "down_mbps": {{ hysteria2_down_mbps | default(100) }}
+    },
+{% endif %}
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "block",
+      "tag": "block"
+    },
+    {
+      "type": "dns",
+      "tag": "dns-out"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "protocol": "dns",
+        "outbound": "dns-out"
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "direct"
+      }
+    ],
+    "auto_detect_interface": true,
+    "final": "proxy"
+  }
+}

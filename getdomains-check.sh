@@ -305,7 +305,7 @@ printf "$COLOR_BOLD_BLUE$CURRENT_DATE: $(date)$COLOR_RESET\n"
 
 VERSION_ID=$(echo $VERSION | awk -F. '{print $1}')
 RAM=$(free -m | grep Mem: | awk '{print $2}')
-if [[ "$VERSION_ID" -ge 22 && "$RAM" -lt 150000 ]]; then
+if [[ "$VERSION_ID" -ge 22 && "$RAM" -lt $MIN_RAM ]]; then
   echo "$RAM_WARNING"
 fi
 

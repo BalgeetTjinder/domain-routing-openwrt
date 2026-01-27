@@ -10,3 +10,26 @@
   wg_access: false
 
   wg_listen_port: 51820
+
+  # Sing-box protocol selection
+  # Options: vless-reality, hysteria2, multi (both)
+  singbox_protocol: vless-reality
+
+  # VLESS + Reality settings
+  vless_enabled: true
+  vless_server: ""
+  vless_port: 443
+  vless_uuid: ""
+  vless_sni: "www.microsoft.com"
+  vless_fingerprint: "chrome"
+  vless_public_key: ""
+  vless_short_id: ""
+
+  # Hysteria 2 settings
+  hysteria2_enabled: false
+  hysteria2_server: ""
+  hysteria2_port: 8443
+  hysteria2_password: ""
+  hysteria2_sni: ""
+  hysteria2_up_mbps: 100
+  hysteria2_down_mbps: 100

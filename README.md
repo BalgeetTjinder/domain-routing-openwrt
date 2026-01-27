@@ -87,7 +87,88 @@ Wireguard, only domains, stubby, Russia, acces from wg network (пример 192
     wg_access_network: wg-network
 ```
 
-Sing-box, stubby, Russia
+Sing-box с VLESS + Reality (рекомендуется для обхода блокировок)
+```
+- hosts: 192.168.1.1
+  remote_user: root
+
+  roles:
+    - itdoginfo.domain_routing_openwrt
+
+  vars:
+    tunnel: singbox
+    singbox_protocol: vless-reality
+    dns_encrypt: stubby
+    country: russia-inside
+
+    # VLESS + Reality настройки (получить на сервере)
+    vless_server: "your-vps-ip"
+    vless_port: 443
+    vless_uuid: "your-uuid"
+    vless_sni: "www.microsoft.com"
+    vless_fingerprint: "chrome"
+    vless_public_key: "your-public-key"
+    vless_short_id: "your-short-id"
+```
+
+Sing-box с Hysteria 2 (быстрый, устойчив к throttling)
+```
+- hosts: 192.168.1.1
+  remote_user: root
+
+  roles:
+    - itdoginfo.domain_routing_openwrt
+
+  vars:
+    tunnel: singbox
+    singbox_protocol: hysteria2
+    dns_encrypt: stubby
+    country: russia-inside
+
+    # Hysteria 2 настройки
+    hysteria2_server: "your-vps-ip"
+    hysteria2_port: 8443
+    hysteria2_password: "your-password"
+    hysteria2_sni: "your-domain.com"
+    hysteria2_up_mbps: 100
+    hysteria2_down_mbps: 100
+```
+
+Sing-box с обоими протоколами (VLESS + Hysteria2 с возможностью переключения)
+```
+- hosts: 192.168.1.1
+  remote_user: root
+
+  roles:
+    - itdoginfo.domain_routing_openwrt
+
+  vars:
+    tunnel: singbox
+    singbox_protocol: multi
+    dns_encrypt: stubby
+    country: russia-inside
+
+    # VLESS + Reality
+    vless_enabled: true
+    vless_server: "your-vps-ip"
+    vless_port: 443
+    vless_uuid: "your-uuid"
+    vless_sni: "www.microsoft.com"
+    vless_fingerprint: "chrome"
+    vless_public_key: "your-public-key"
+    vless_short_id: "your-short-id"
+
+    # Hysteria 2
+    hysteria2_enabled: true
+    hysteria2_server: "your-vps-ip"
+    hysteria2_port: 8443
+    hysteria2_password: "your-password"
+    hysteria2_sni: "your-domain.com"
+    hysteria2_up_mbps: 100
+    hysteria2_down_mbps: 100
+```
+
+Sing-box (legacy/Shadowsocks) - старый вариант
 ```
 - hosts: 192.168.1.1
   remote_user: root
@@ -134,20 +215,31 @@ service getdomains start
 - OpenWrt 21.02.7
 - OpenWrt 22.03.5
 - OpenWrt 23.05.2
+- OpenWrt 24.10.x
 
 ## Выбор туннеля
-- Wireguard настраивается автоматически через переменные
-- OpenVPN устанавливается пакет, настраивается роутинг и зона. Само подключение (скопировать конфиг и перезапустить openvpn) нужно [настроить вручную](https://itdog.info/nastrojka-klienta-openvpn-na-openwrt/)
-- Sing-box устанавливает пакет, настраивается роутинг и зона. Также кладётся темплейт в `/etc/sing-box/config.json`. [Нужно настроить](https://habr.com/ru/articles/767458/) `config.json` и сделать `service sing-box restart`
-Не работает под 21ой версией. Поэтому при его выборе playbook выдаст ошибку.
-Для 22ой версии нужно установить пакет вручную.
-- tun2socks настраивается только роутинг и зона. Всё остальное нужно настроить вручную
+- **Wireguard** — настраивается автоматически через переменные
+- **OpenVPN** — устанавливается пакет, настраивается роутинг и зона. Само подключение нужно [настроить вручную](https://itdog.info/nastrojka-klienta-openvpn-na-openwrt/)
+- **Sing-box** — устанавливает пакет, настраивается роутинг и зона. Поддерживает современные протоколы:
+  - **VLESS + Reality** — максимальная устойчивость к блокировкам, маскировка под легитимный HTTPS
+  - **Hysteria 2** — быстрый протокол на QUIC/UDP с алгоритмом Brutal против throttling
+  - **Multi** — оба протокола с возможностью переключения
+  - Legacy (Shadowsocks и др.) — требует ручной настройки конфига
+- **tun2socks** — настраивается только роутинг и зона, остальное вручную
 
-Для **tunnel** шесть возможных значений:
+Для **tunnel** возможные значения:
 - wg
 - openvpn
 - singbox
 - tun2socks
+
+### Sing-box протоколы
+
+При использовании `tunnel: singbox` можно указать **singbox_protocol**:
+- `vless-reality` — VLESS + Reality (рекомендуется)
+- `hysteria2` — Hysteria 2
+- `multi` — оба протокола
+- не указывать — legacy режим, требует ручной настройки config.json
 
 В случае использования WG:
 ```
