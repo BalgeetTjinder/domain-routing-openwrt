@@ -38,14 +38,19 @@
   ],
   "outbounds": [
     {
-      "type": "selector",
-      "tag": "proxy",
+      "type": "urltest",
+      "tag": "auto",
       "outbounds": [
+{% if vless_enabled | default(true) %}
         "vless-reality",
-        "hysteria2",
-        "direct"
+{% endif %}
+{% if hysteria2_enabled | default(true) %}
+        "hysteria2"
+{% endif %}
       ],
-      "default": "vless-reality"
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "1m",
+      "tolerance": 50
     },
 {% if vless_enabled | default(true) %}
     {
@@ -111,6 +116,6 @@
       }
     ],
     "auto_detect_interface": true,
-    "final": "proxy"
+    "final": "auto"
   }
 }
