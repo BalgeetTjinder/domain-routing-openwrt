@@ -175,20 +175,10 @@ configure_singbox() {
     
     mkdir -p /etc/sing-box
     
+    # Sing-box 1.11+: no DNS block, no dns/block outbound (legacy deprecated)
     cat > /etc/sing-box/config.json << EOF
 {
-  "log": {
-    "level": "info",
-    "timestamp": true
-  },
-  "dns": {
-    "servers": [
-      {"tag": "google", "address": "tls://8.8.8.8"},
-      {"tag": "local", "address": "local", "detour": "direct"}
-    ],
-    "rules": [{"outbound": "any", "server": "local"}],
-    "strategy": "ipv4_only"
-  },
+  "log": {"level": "info", "timestamp": true},
   "inbounds": [
     {
       "type": "tun",
@@ -235,15 +225,10 @@ configure_singbox() {
       "up_mbps": ${HY2_UP},
       "down_mbps": ${HY2_DOWN}
     },
-    {"type": "direct", "tag": "direct"},
-    {"type": "block", "tag": "block"},
-    {"type": "dns", "tag": "dns-out"}
+    {"type": "direct", "tag": "direct"}
   ],
   "route": {
-    "rules": [
-      {"protocol": "dns", "outbound": "dns-out"},
-      {"ip_is_private": true, "outbound": "direct"}
-    ],
+    "rules": [{"ip_is_private": true, "outbound": "direct"}],
     "auto_detect_interface": true,
     "final": "auto"
   }
