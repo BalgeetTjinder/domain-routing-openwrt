@@ -1,0 +1,43 @@
+# Playbook для настройки GL.iNet Flint 2 (GL-MT6000)
+# Точечная маршрутизация через Sing-box (VLESS Reality + Hysteria 2)
+#
+# Использование:
+#   ansible-playbook -i inventory.ini playbook.yml
+#
+# Перед запуском:
+#   1. Заполни данные ниже (из S-UI панели)
+#   2. Настрой SSH доступ к роутеру (ключ или пароль)
+
+- hosts: router
+  remote_user: root
+
+  roles:
+    - .  # Используем локальную роль из текущей директории
+
+  vars:
+    # === Основные настройки ===
+    tunnel: singbox
+    singbox_protocol: multi          # multi = оба протокола с переключением
+    dns_encrypt: stubby              # Шифрование DNS (stubby/dnscrypt/false)
+    country: russia-inside           # Список доменов для обхода
+
+    # === VLESS + Reality ===
+    # Данные взять из S-UI: Inbounds → vless-reality → Client → CONFIG
+    vless_enabled: true
+    vless_server: "79.137.195.239"   # IP твоего VPS
+    vless_port: 443
+    vless_uuid: "ВСТАВЬ_UUID_СЮДА"   # UUID клиента из S-UI
+    vless_sni: "www.microsoft.com"   # SNI (Dest) из настроек Reality
+    vless_fingerprint: "chrome"
+    vless_public_key: "ВСТАВЬ_PUBLIC_KEY_СЮДА"  # Public Key из S-UI
+    vless_short_id: "ВСТАВЬ_SHORT_ID_СЮДА"      # Short ID из S-UI
+
+    # === Hysteria 2 ===
+    # Данные взять из S-UI: Inbounds → hysteria2 → Client
+    hysteria2_enabled: true
+    hysteria2_server: "79.137.195.239"  # IP твоего VPS
+    hysteria2_port: 8443
+    hysteria2_password: "ВСТАВЬ_ПАРОЛЬ_СЮДА"  # Пароль клиента из S-UI
+    hysteria2_sni: "dev.milostyle.online"     # Твой домен
+    hysteria2_up_mbps: 100    # Скорость upload (как на сервере)
+    hysteria2_down_mbps: 100  # Скорость download (как на сервере)
