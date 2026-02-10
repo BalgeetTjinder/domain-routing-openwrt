@@ -60,6 +60,16 @@ fi
 info "Removing domain lists..."
 rm -f /tmp/dnsmasq.d/domains.lst
 
+# Remove LuCI VPN domains helper
+info "Removing LuCI VPN domains helper..."
+rm -f /etc/dnsmasq.d/custom-vpn-domains.conf
+[ -d /etc/dnsmasq.d ] && rmdir /etc/dnsmasq.d 2>/dev/null || true
+rm -f /etc/config/vpndomains
+rm -f /usr/lib/lua/luci/controller/vpndomains.lua
+rm -f /usr/lib/lua/luci/model/cbi/vpndomains.lua
+rm -f /tmp/luci-indexcache
+/etc/init.d/uhttpd restart 2>/dev/null || true
+
 # Clean firewall - singbox zone
 info "Cleaning firewall..."
 

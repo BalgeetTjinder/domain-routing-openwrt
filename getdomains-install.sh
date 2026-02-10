@@ -345,6 +345,127 @@ configure_dnsmasq() {
     info "dnsmasq configured"
 }
 
+# Configure LuCI helper for custom VPN domains
+configure_vpndomains_luci() {
+    info "Configuring LuCI VPN domains helper..."
+
+    # If LuCI is not installed, skip helper
+    if [ ! -d /usr/lib/lua/luci ]; then
+        info "LuCI not found, skipping LuCI helper"
+        return 0
+    fi
+
+    # UCI config with example domain
+    if [ ! -f /etc/config/vpndomains ]; then
+        cat > /etc/config/vpndomains << 'EOF'
+config vpndomains 'general'
+    option enabled '1'
+
+# Add your own domains below or use LuCI (Services -> VPN domains)
+config domain
+    option name 'example.com'
+EOF
+    fi
+
+    # Ensure local dnsmasq config directory exists
+    mkdir -p /etc/dnsmasq.d
+
+    # Make sure /etc/dnsmasq.d is included in confdir
+    CURR_CONF=$(uci -q get dhcp.@dnsmasq[0].confdir)
+    case " $CURR_CONF " in
+        *"/etc/dnsmasq.d"*)
+            ;;
+        *)
+            if [ -n "$CURR_CONF" ]; then
+                uci set dhcp.@dnsmasq[0].confdir="$CURR_CONF /etc/dnsmasq.d"
+            else
+                uci set dhcp.@dnsmasq[0].confdir="/tmp/dnsmasq.d /etc/dnsmasq.d"
+            fi
+            uci commit dhcp 2>/dev/null || true
+            ;;
+    esac
+
+    # LuCI controller
+    mkdir -p /usr/lib/lua/luci/controller /usr/lib/lua/luci/model/cbi
+
+    cat > /usr/lib/lua/luci/controller/vpndomains.lua << 'EOF'
+module("luci.controller.vpndomains", package.seeall)
+
+function index()
+    if not nixio.fs.access("/etc/config/vpndomains") then
+        return
+    end
+
+    entry(
+        {"admin", "services", "vpndomains"},
+        cbi("vpndomains"),
+        _("VPN domains"),
+        90
+    ).dependent = true
+end
+EOF
+
+    # LuCI model
+    cat > /usr/lib/lua/luci/model/cbi/vpndomains.lua << 'EOF'
+local fs  = require "nixio.fs"
+local sys = require "luci.sys"
+
+local m = Map("vpndomains", translate("VPN domains"),
+    translate("Domains whose traffic should be routed via VPN (vpn_domains)."))
+
+local s_general = m:section(NamedSection, "general", "vpndomains", translate("General"))
+local o_en = s_general:option(Flag, "enabled", translate("Enable"))
+o_en.default = o_en.enabled
+
+local s = m:section(TypedSection, "domain", translate("Domains"))
+s.addremove = true
+s.anonymous = true
+
+local o = s:option(Value, "name", translate("Domain"))
+o.datatype = "host"
+o.placeholder = "example.com"
+
+function m.on_commit(map)
+    local enabled = map.uci:get("vpndomains", "general", "enabled")
+    local path = "/etc/dnsmasq.d/custom-vpn-domains.conf"
+
+    if enabled ~= "1" then
+        fs.unlink(path)
+        sys.call("/etc/init.d/dnsmasq restart >/dev/null 2>&1")
+        return
+    end
+
+    local lines = {}
+
+    map.uci:foreach("vpndomains", "domain", function(s)
+        local name = s.name
+        if name and name ~= "" then
+            table.insert(lines, string.format(
+                "nftset=/%s/4#inet#fw4#vpn_domains", name
+            ))
+        end
+    end)
+
+    if #lines > 0 then
+        fs.writefile(path, table.concat(lines, "\n") .. "\n")
+    else
+        fs.unlink(path)
+    end
+
+    sys.call("/etc/init.d/dnsmasq restart >/dev/null 2>&1")
+end
+
+return m
+EOF
+
+    # Refresh LuCI menu and reload dnsmasq
+    rm -f /tmp/luci-indexcache 2>/dev/null || true
+    /etc/init.d/uhttpd restart 2>/dev/null || true
+    /etc/init.d/dnsmasq restart 2>/dev/null || true
+
+    info "LuCI VPN domains helper installed (Services -> VPN domains)"
+}
+
 # DNS resolver
 configure_dns() {
     echo ""
@@ -516,4 +637,5 @@ configure_firewall
 configure_dnsmasq
 configure_dns
 create_getdomains
+configure_vpndomains_luci
 start_services
