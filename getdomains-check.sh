@@ -165,8 +165,10 @@ echo ""
 # Check domains list
 info "Checking domain list..."
 
-if [ -f /tmp/dnsmasq.d/domains.lst ]; then
-    LINES=$(wc -l < /tmp/dnsmasq.d/domains.lst)
+DOMAINS_LST="/etc/dnsmasq.d/domains.lst"
+[ -f "$DOMAINS_LST" ] || DOMAINS_LST="/tmp/dnsmasq.d/domains.lst"
+if [ -f "$DOMAINS_LST" ]; then
+    LINES=$(wc -l < "$DOMAINS_LST")
     ok "domains.lst exists ($LINES entries)"
 else
     fail "domains.lst not found. Run: /etc/init.d/getdomains start"

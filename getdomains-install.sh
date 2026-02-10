@@ -334,13 +334,13 @@ configure_dnsmasq() {
         VERSION_NUM=24
     fi
     
-    # For OpenWrt 24.x use confdir
+    # Single confdir (OpenWrt passes one path; two paths break dnsmasq)
     if [ -n "$VERSION_NUM" ] && [ "$VERSION_NUM" -ge 24 ] 2>/dev/null; then
-        uci set dhcp.@dnsmasq[0].confdir='/tmp/dnsmasq.d' 2>/dev/null || true
+        uci set dhcp.@dnsmasq[0].confdir='/etc/dnsmasq.d' 2>/dev/null || true
         uci commit dhcp 2>/dev/null || true
     fi
     
-    mkdir -p /tmp/dnsmasq.d
+    mkdir -p /etc/dnsmasq.d
     
     info "dnsmasq configured"
 }
@@ -367,23 +367,7 @@ config domain
 EOF
     fi
 
-    # Ensure local dnsmasq config directory exists
     mkdir -p /etc/dnsmasq.d
-
-    # Make sure /etc/dnsmasq.d is included in confdir
-    CURR_CONF=$(uci -q get dhcp.@dnsmasq[0].confdir)
-    case " $CURR_CONF " in
-        *"/etc/dnsmasq.d"*)
-            ;;
-        *)
-            if [ -n "$CURR_CONF" ]; then
-                uci set dhcp.@dnsmasq[0].confdir="$CURR_CONF /etc/dnsmasq.d"
-            else
-                uci set dhcp.@dnsmasq[0].confdir="/tmp/dnsmasq.d /etc/dnsmasq.d"
-            fi
-            uci commit dhcp 2>/dev/null || true
-            ;;
-    esac
 
     # LuCI controller
     mkdir -p /usr/lib/lua/luci/controller /usr/lib/lua/luci/model/cbi
@@ -471,6 +455,7 @@ configure_dns() {
     echo ""
     echo "Install Stubby for DNS encryption?"
     echo "Recommended if your ISP spoofs DNS"
+    echo "(If you choose Yes, first domain-list update may take 1-3 min)"
     echo ""
     echo "1) Yes"
     echo "2) No"
@@ -527,11 +512,12 @@ START=99
 
 start() {
     DOMAINS="${DOMAINS_URL}"
+    mkdir -p /etc/dnsmasq.d
     
     count=0
     while true; do
         if curl -s -m 5 https://github.com >/dev/null 2>&1; then
-            curl -s -f "\$DOMAINS" -o /tmp/dnsmasq.d/domains.lst
+            curl -s -f "\$DOMAINS" -o /etc/dnsmasq.d/domains.lst
             break
         else
             count=\$((count+1))
@@ -540,7 +526,7 @@ start() {
         fi
     done
     
-    if [ -f /tmp/dnsmasq.d/domains.lst ]; then
+    if [ -f /etc/dnsmasq.d/domains.lst ]; then
         /etc/init.d/dnsmasq restart
     fi
 }
@@ -582,7 +568,9 @@ start_services() {
     # Add route manually
     ip route replace table vpn default dev tun0 2>/dev/null || true
     
-    /etc/init.d/getdomains start 2>/dev/null || true
+    info "Updating domain list from GitHub (runs in background, up to ~3 min)..."
+    (/etc/init.d/getdomains start 2>/dev/null) &
+    sleep 15
     
     sleep 3
     

@@ -59,10 +59,13 @@ fi
 # Remove domain list
 info "Removing domain lists..."
 rm -f /tmp/dnsmasq.d/domains.lst
+rm -f /etc/dnsmasq.d/domains.lst
 
-# Remove LuCI VPN domains helper
+# Remove LuCI VPN domains helper and dnsmasq confdir
 info "Removing LuCI VPN domains helper..."
 rm -f /etc/dnsmasq.d/custom-vpn-domains.conf
+uci -q delete dhcp.@dnsmasq[0].confdir 2>/dev/null || true
+uci commit dhcp 2>/dev/null || true
 [ -d /etc/dnsmasq.d ] && rmdir /etc/dnsmasq.d 2>/dev/null || true
 rm -f /etc/config/vpndomains
 rm -f /usr/lib/lua/luci/controller/vpndomains.lua
