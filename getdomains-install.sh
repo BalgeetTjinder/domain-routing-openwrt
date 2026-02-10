@@ -365,6 +365,12 @@ config vpndomains 'general'
 config domain
     option name 'example.com'
 EOF
+    else
+        # Ensure enabled option exists (default to '1' if missing)
+        if ! uci -q get vpndomains.general.enabled >/dev/null 2>&1; then
+            uci set vpndomains.general.enabled='1'
+            uci commit vpndomains 2>/dev/null || true
+        fi
     fi
 
     mkdir -p /etc/dnsmasq.d
@@ -413,7 +419,14 @@ function m.on_commit(map)
     local enabled = map.uci:get("vpndomains", "general", "enabled")
     local path = "/etc/dnsmasq.d/custom-vpn-domains.conf"
 
-    if enabled ~= "1" then
+    -- Ensure enabled option exists (default to '1' if missing)
+    if not enabled or enabled == "" then
+        map.uci:set("vpndomains", "general", "enabled", "1")
+        map.uci:commit("vpndomains")
+        enabled = "1"
+    end
+
+    if enabled == "0" then
         fs.unlink(path)
         sys.call("/etc/init.d/dnsmasq restart >/dev/null 2>&1")
         return
@@ -441,6 +454,38 @@ end
 
 return m
 EOF
+
+    # Generate initial custom-vpn-domains.conf if domains exist in UCI
+    ENABLED=$(uci -q get vpndomains.general.enabled)
+    if [ "$ENABLED" != "0" ]; then
+        # Default to enabled if option is missing
+        if [ -z "$ENABLED" ]; then
+            uci set vpndomains.general.enabled='1'
+            uci commit vpndomains 2>/dev/null || true
+        fi
+        
+        # Generate file from existing domains
+        CUSTOM_CONF="/etc/dnsmasq.d/custom-vpn-domains.conf"
+        > "$CUSTOM_CONF"
+        
+        uci show vpndomains 2>/dev/null | grep "\.name=" | while IFS='=' read -r key value; do
+            DOMAIN=$(echo "$value" | tr -d "'\"")
+            if [ -n "$DOMAIN" ]; then
+                echo "nftset=/$DOMAIN/4#inet#fw4#vpn_domains" >> "$CUSTOM_CONF"
+            fi
+        done
+        
+        # Remove example.com if it exists
+        sed -i '/example\.com/d' "$CUSTOM_CONF" 2>/dev/null || true
+        
+        if [ -s "$CUSTOM_CONF" ]; then
+            info "Generated custom-vpn-domains.conf from existing UCI domains"
+        else
+            rm -f "$CUSTOM_CONF" 2>/dev/null || true
+        fi
+    else
+        rm -f /etc/dnsmasq.d/custom-vpn-domains.conf 2>/dev/null || true
+    fi
 
     # Refresh LuCI menu and reload dnsmasq
     rm -f /tmp/luci-indexcache 2>/dev/null || true
