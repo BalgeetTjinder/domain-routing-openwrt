@@ -58,7 +58,13 @@ info "Removing package feeds..."
 [ -f /etc/opkg/customfeeds.conf ] && \
     sed -i '/openwrt-passwall-build\/releases\/packages-/d' /etc/opkg/customfeeds.conf
 
-# 6. Remove prestart hook and rc.local entries
+# 6. Remove ucitrack entry
+uci show ucitrack 2>/dev/null | grep -q "passwall2" && {
+    uci delete ucitrack.@passwall2[-1] 2>/dev/null
+    uci commit ucitrack 2>/dev/null
+}
+
+# 7. Remove prestart hook and rc.local entries
 info "Removing startup hooks..."
 rm -f /etc/passwall2-prestart.sh 2>/dev/null || true
 sed -i '/passwall2-prestart/d' /etc/rc.local 2>/dev/null || true

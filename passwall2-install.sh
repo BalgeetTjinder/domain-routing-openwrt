@@ -194,6 +194,13 @@ configure_passwall2() {
     uci set passwall2.@global_forwarding[0].tcp_no_redir_ports='disable'
     uci set passwall2.@global_forwarding[0].udp_no_redir_ports='disable'
 
+    # Register in ucitrack so LuCI restarts Passwall2 on Save & Apply
+    if ! uci show ucitrack 2>/dev/null | grep -q "passwall2"; then
+        uci add ucitrack passwall2 >/dev/null
+        uci set ucitrack.@passwall2[-1].init='passwall2'
+        uci commit ucitrack
+    fi
+
     uci commit passwall2
     mkdir -p /tmp/etc/passwall2/script_func
     info "Passwall2 configured"
