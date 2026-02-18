@@ -106,8 +106,8 @@ configure_routing() {
     uci set passwall2.pw2_shunt.write_ipset_direct='0'
     uci set passwall2.pw2_shunt.enable_geoview_ip='0'
 
-    # Point main node to shunt, keep disabled until user adds VPN nodes
-    uci set passwall2.@global[0].enabled='0'
+    # Point main node to shunt (enabled by default)
+    uci set passwall2.@global[0].enabled='1'
     uci set passwall2.@global[0].node='pw2_shunt'
 
     # Geodata source: runetfreedom Russia rules
@@ -153,9 +153,8 @@ finish() {
     echo "                     -> Default            = Direct Connection"
     echo "     Save & Apply"
     echo ""
-    echo "  3. Enable:"
-    echo "     Basic Settings -> Enable -> Save & Apply"
-    echo "     Then: /etc/init.d/passwall2 restart"
+    echo "  3. Restart service:"
+    echo "     /etc/init.d/passwall2 restart"
     echo ""
 }
 
