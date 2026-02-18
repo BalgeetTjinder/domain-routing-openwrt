@@ -177,8 +177,8 @@ configure_passwall2() {
     uci set passwall2.pw2_shunt.default_node='_direct'
     uci set passwall2.pw2_shunt.domainStrategy='IPOnDemand'
     uci set passwall2.pw2_shunt.domainMatcher='hybrid'
-    uci set passwall2.pw2_shunt.write_ipset_direct='1'
-    uci set passwall2.pw2_shunt.enable_geoview_ip='1'
+    uci set passwall2.pw2_shunt.write_ipset_direct='0'
+    uci set passwall2.pw2_shunt.enable_geoview_ip='0'
     # Safe defaults: do not route to empty placeholder node.
     uci set passwall2.pw2_shunt.Russia_Block='_direct'
     uci set passwall2.pw2_shunt.pw2_custom='_direct'
