@@ -42,9 +42,9 @@ info "Stopping Passwall2..."
 /etc/init.d/passwall2 stop 2>/dev/null || true
 /etc/init.d/passwall2 disable 2>/dev/null || true
 
-# Remove nodes added by this script
+# Remove nodes added by this script (including default placeholders)
 info "Removing Passwall2 nodes..."
-for section in pw2_vless pw2_hy2 pw2_shunt; do
+for section in pw2_vless pw2_hy2 pw2_shunt examplenode rulenode; do
     if uci -q get passwall2."$section" >/dev/null 2>&1; then
         uci delete passwall2."$section" 2>/dev/null || true
         info "  Removed node: $section"

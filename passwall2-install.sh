@@ -141,6 +141,13 @@ configure_passwall2() {
         fi
     fi
 
+    # Remove default placeholder nodes that come with 0_default_config
+    for section in examplenode rulenode; do
+        if uci -q get passwall2."$section" >/dev/null 2>&1; then
+            uci delete passwall2."$section" 2>/dev/null || true
+        fi
+    done
+
     # --- Node: VLESS XHTTP Reality (placeholder — enter server details in LuCI) ---
     # Both nodes use Xray core (type='Xray'); no separate hysteria binary needed.
     uci set passwall2.pw2_vless=nodes
