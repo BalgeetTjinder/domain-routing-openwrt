@@ -215,13 +215,26 @@ fix_tmp_exec() {
         info "Fixing /tmp noexec (required for Xray/Hysteria binaries)..."
         mount -o remount,exec /tmp
     fi
-    if ! grep -q "remount,exec /tmp" /etc/rc.local 2>/dev/null; then
-        if grep -q '^exit 0' /etc/rc.local 2>/dev/null; then
-            sed -i '/^exit 0/i mount -o remount,exec /tmp' /etc/rc.local 2>/dev/null || true
-        else
-            printf '\nmount -o remount,exec /tmp\nexit 0\n' >> /etc/rc.local
-        fi
-        info "/tmp exec persisted in /etc/rc.local"
+
+    # Passwall2 copies binaries to /tmp/etc/passwall2/bin/ using plain `cp`,
+    # which strips the execute bit (busybox cp applies umask → 0644).
+    # Fix: write a prestart script that pre-copies with cp -p (preserves +x).
+    cat > /etc/passwall2-prestart.sh << 'EOF'
+#!/bin/sh
+mount -o remount,exec /tmp 2>/dev/null || true
+mkdir -p /tmp/etc/passwall2/bin /tmp/etc/passwall2/script_func
+for _b in xray hysteria; do
+    _p=$(command -v "$_b" 2>/dev/null)
+    [ -n "$_p" ] && cp -p "$_p" /tmp/etc/passwall2/bin/"$_b" 2>/dev/null || true
+done
+EOF
+    chmod +x /etc/passwall2-prestart.sh
+    sh /etc/passwall2-prestart.sh
+
+    if ! grep -q "passwall2-prestart" /etc/rc.local 2>/dev/null; then
+        sed -i '/^exit 0/i sh /etc/passwall2-prestart.sh' /etc/rc.local 2>/dev/null || \
+            printf '\nsh /etc/passwall2-prestart.sh\n' >> /etc/rc.local
+        info "Passwall2 prestart hooked into /etc/rc.local"
     fi
 }
 

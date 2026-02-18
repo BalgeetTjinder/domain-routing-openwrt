@@ -53,7 +53,9 @@ if [ -f /etc/opkg/customfeeds.conf ]; then
     sed -i '/openwrt-passwall-build\/releases\/packages-/d' /etc/opkg/customfeeds.conf
 fi
 
-info "Removing /tmp exec workaround and runtime cache..."
+info "Removing prestart script and rc.local hooks..."
+rm -f /etc/passwall2-prestart.sh 2>/dev/null || true
+sed -i '/passwall2-prestart/d' /etc/rc.local 2>/dev/null || true
 sed -i '/mount -o remount,exec \/tmp/d' /etc/rc.local 2>/dev/null || true
 rm -rf /tmp/etc/passwall2 2>/dev/null || true
 
