@@ -70,7 +70,10 @@ uci commit dhcp 2>/dev/null || true
 rm -f /etc/config/vpndomains
 rm -f /usr/lib/lua/luci/controller/vpndomains.lua
 rm -f /usr/lib/lua/luci/model/cbi/vpndomains.lua
-rm -f /tmp/luci-indexcache
+# Clear LuCI caches so "VPN Domains" disappears from Services menu
+rm -f /tmp/luci-indexcache /tmp/luci-indexcache.* 2>/dev/null || true
+rm -rf /tmp/luci-modulecache 2>/dev/null || true
+/etc/init.d/rpcd restart 2>/dev/null || true
 /etc/init.d/uhttpd restart 2>/dev/null || true
 
 # Clean firewall - singbox zone
