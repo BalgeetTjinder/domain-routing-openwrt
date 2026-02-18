@@ -258,130 +258,6 @@ download_geodata() {
     fi
 }
 
-# Install LuCI page for managing custom VPN domains
-configure_vpndomains_luci() {
-    info "Installing LuCI VPN Domains helper..."
-
-    if [ ! -d /usr/lib/lua/luci ]; then
-        info "LuCI not found, skipping"
-        return 0
-    fi
-
-    # UCI config for custom domains
-    if [ ! -f /etc/config/vpndomains ]; then
-        cat > /etc/config/vpndomains << 'EOF'
-config vpndomains 'general'
-    option enabled '1'
-
-# Add domains below or via LuCI (Services -> VPN Domains)
-config domain
-    option name 'example.com'
-EOF
-    else
-        if ! uci -q get vpndomains.general.enabled >/dev/null 2>&1; then
-            uci set vpndomains.general.enabled='1'
-            uci commit vpndomains 2>/dev/null || true
-        fi
-    fi
-
-    mkdir -p /usr/lib/lua/luci/controller /usr/lib/lua/luci/model/cbi
-
-    # LuCI controller
-    cat > /usr/lib/lua/luci/controller/vpndomains.lua << 'EOF'
-module("luci.controller.vpndomains", package.seeall)
-
-function index()
-    if not nixio.fs.access("/etc/config/vpndomains") then
-        return
-    end
-    entry(
-        {"admin", "services", "vpndomains"},
-        cbi("vpndomains"),
-        _("VPN Domains"),
-        90
-    ).dependent = true
-end
-EOF
-
-    # LuCI CBI model
-    # on_commit: writes domain list to passwall2.pw2_custom.domain_list and restarts Passwall2
-    cat > /usr/lib/lua/luci/model/cbi/vpndomains.lua << 'EOF'
-local sys     = require "luci.sys"
-local uci_pw2 = require("luci.model.uci").cursor()
-
-local m = Map("vpndomains", translate("VPN Domains"),
-    translate("Domains routed through VPN via Passwall2 shunt rule."))
-
-local s_gen = m:section(NamedSection, "general", "vpndomains", translate("General"))
-local o_en  = s_gen:option(Flag, "enabled", translate("Enable"))
-o_en.default = o_en.enabled
-
-local s = m:section(TypedSection, "domain", translate("Domains"))
-s.addremove = true
-s.anonymous = true
-
-local o = s:option(Value, "name", translate("Domain"))
-o.datatype    = "host"
-o.placeholder = "example.com"
-
-function m.on_commit(map)
-    local enabled = map.uci:get("vpndomains", "general", "enabled")
-
-    if not enabled or enabled == "" then
-        enabled = "1"
-        map.uci:set("vpndomains", "general", "enabled", "1")
-        map.uci:commit("vpndomains")
-    end
-
-    local domains = {}
-
-    if enabled ~= "0" then
-        map.uci:foreach("vpndomains", "domain", function(s)
-            local name = s.name
-            if name and name ~= "" and name ~= "example.com" then
-                table.insert(domains, name)
-            end
-        end)
-    end
-
-    -- Write domain list to Passwall2 shunt rule pw2_custom
-    uci_pw2:set("passwall2", "pw2_custom", "domain_list",
-        table.concat(domains, "\n"))
-    uci_pw2:commit("passwall2")
-
-    -- Restart Passwall2 in background to apply changes
-    sys.call("/etc/init.d/passwall2 restart >/dev/null 2>&1 &")
-end
-
-return m
-EOF
-
-    # Sync existing non-example domains to Passwall2 right now
-    ENABLED=$(uci -q get vpndomains.general.enabled 2>/dev/null)
-    if [ "$ENABLED" != "0" ]; then
-        DOMAIN_LINES=""
-        while IFS= read -r line; do
-            DOMAIN=$(echo "$line" | grep "\.name=" | sed "s/.*='\(.*\)'/\1/")
-            if [ -n "$DOMAIN" ] && [ "$DOMAIN" != "example.com" ]; then
-                DOMAIN_LINES="${DOMAIN_LINES}${DOMAIN}
-"
-            fi
-        done << UCIEOF
-$(uci show vpndomains 2>/dev/null | grep "\.name=")
-UCIEOF
-
-        if [ -n "$DOMAIN_LINES" ]; then
-            uci set passwall2.pw2_custom.domain_list="$DOMAIN_LINES"
-            uci commit passwall2 2>/dev/null || true
-        fi
-    fi
-
-    rm -f /tmp/luci-indexcache* 2>/dev/null || true
-    /etc/init.d/rpcd restart 2>/dev/null || true
-    /etc/init.d/uhttpd restart 2>/dev/null || true
-
-    info "LuCI VPN Domains helper installed (Services -> VPN Domains)"
-}
 
 # Start services
 start_services() {
@@ -411,8 +287,8 @@ start_services() {
     echo "  Custom VPN Domains  →  VLESS-XHTTP-Reality"
     echo "  Everything else     →  direct"
     echo ""
-    echo "To add custom domains: Services -> VPN Domains"
-    echo "To switch to Hysteria2: Passwall2 -> Shunt Rules -> change node"
+echo "To add custom domains: Passwall2 -> Shunt Rules -> Custom VPN Domains"
+echo "To switch to Hysteria2: Passwall2 -> Shunt Rules -> change node"
     echo ""
     echo "Useful commands:"
     echo "  logread | grep passwall2        - logs"
@@ -446,5 +322,4 @@ add_passwall2_feed
 install_packages
 configure_passwall2
 download_geodata
-configure_vpndomains_luci
 start_services
