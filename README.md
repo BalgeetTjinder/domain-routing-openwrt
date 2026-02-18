@@ -1,53 +1,99 @@
 # Domain Routing OpenWrt
 
-Точечная маршрутизация по доменам на OpenWrt через **Sing-box** (VLESS Reality + Hysteria 2).
+Точечная маршрутизация по доменам на OpenWrt. Только заблокированные сайты идут через VPN, остальной трафик — напрямую.
 
-Только заблокированные сайты идут через VPN, остальной трафик — напрямую.
+Два варианта установки:
 
-## Требования
+| | Passwall2 (новый) | Sing-box (старый) |
+|---|---|---|
+| VPN клиент | Passwall2 + Xray | Sing-box |
+| Протоколы | VLESS XHTTP Reality + Hysteria 2 | VLESS Reality + Hysteria 2 |
+| Управление | LuCI веб-интерфейс | SSH + конфиг файл |
+| Список доменов | geosite:ru-blocked (авто-обновление) | itdoginfo (cron каждые 8ч) |
+| Кастомные домены | LuCI: Services → VPN Domains | LuCI: Services → VPN Domains |
+
+---
+
+## Вариант 1: Passwall2 (рекомендуется)
+
+### Требования
+
+- OpenWrt **23.05+** или **24.10+**
+- VPS с VLESS XHTTP Reality + Hysteria 2
+- Доступ к роутеру по SSH
+
+### Установка
+
+```bash
+sh <(wget -O - https://raw.githubusercontent.com/BalgeetTjinder/domain-routing-openwrt/master/passwall2-install.sh)
+```
+
+Скрипт спросит:
+- IP адрес VPS
+- Данные VLESS XHTTP Reality (UUID, Public Key, Short ID, SNI, Port, Path)
+- Данные Hysteria 2 (пароль, домен, Port, Mbps)
+
+### Что устанавливается
+
+- `luci-app-passwall2` — веб-интерфейс управления VPN
+- `xray-core` — VPN движок (VLESS XHTTP Reality)
+- `geoview`, `v2ray-geosite`, `v2ray-geoip` — база доменов
+- `dnsmasq-full` — DNS
+
+### Как работает
+
+```
+Запрос к youtube.com
+        ↓
+Passwall2 (Xray Shunt) проверяет домен
+        ↓
+Домен в geosite:ru-blocked? → Xray → VPS
+        ↓
+Нет → прямое соединение
+```
+
+### Кастомные домены
+
+Открой в LuCI: **Services → VPN Domains**
+
+Добавь домены по одному. При сохранении Passwall2 автоматически перезапустится.
+
+### Полезные команды
+
+```bash
+# Логи
+logread | grep passwall2
+
+# Перезапуск
+/etc/init.d/passwall2 restart
+
+# Статус
+/etc/init.d/passwall2 status
+```
+
+### Удаление
+
+```bash
+sh <(wget -O - https://raw.githubusercontent.com/BalgeetTjinder/domain-routing-openwrt/master/passwall2-uninstall.sh)
+```
+
+---
+
+## Вариант 2: Sing-box (legacy)
+
+### Требования
 
 - OpenWrt **23.05+** или **24.10+**
 - VPS с настроенным [S-UI](https://github.com/alireza0/s-ui) (VLESS Reality + Hysteria 2)
 - Доступ к роутеру по SSH
 
-## Установка
-
-Подключись к роутеру по SSH и выполни:
+### Установка
 
 ```bash
 sh <(wget -O - https://raw.githubusercontent.com/BalgeetTjinder/domain-routing-openwrt/master/getdomains-install.sh)
 ```
 
-Скрипт спросит:
-- IP адрес VPS
-- Данные VLESS Reality (UUID, Public Key, Short ID)
-- Данные Hysteria 2 (пароль, домен)
-
-## Что устанавливается
-
-- `sing-box` — VPN клиент
-- `dnsmasq-full` — DNS с поддержкой nfset
-- `stubby` — шифрование DNS (опционально)
-
-## Как работает
-
-```
-Запрос к youtube.com
-        ↓
-dnsmasq резолвит → IP добавляется в vpn_domains
-        ↓
-Firewall маркирует пакеты к этим IP
-        ↓
-Маркированные пакеты → tun0 → Sing-box → VPS
-```
-
-## Автопереключение протоколов
-
-Sing-box автоматически выбирает лучший протокол:
-- Проверяет latency каждую минуту
-- Переключается если один из протоколов "проседает"
-
-## Полезные команды
+### Полезные команды
 
 ```bash
 # Логи sing-box
@@ -63,11 +109,13 @@ service sing-box restart
 sh <(wget -O - https://raw.githubusercontent.com/BalgeetTjinder/domain-routing-openwrt/master/getdomains-check.sh)
 ```
 
-## Удаление
+### Удаление
 
 ```bash
 sh <(wget -O - https://raw.githubusercontent.com/BalgeetTjinder/domain-routing-openwrt/master/getdomains-uninstall.sh)
 ```
+
+---
 
 ## Благодарности
 
