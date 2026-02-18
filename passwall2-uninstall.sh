@@ -60,6 +60,11 @@ uci set passwall2.@global_rules[0].geosite_url='https://github.com/Loyalsoldier/
 uci set passwall2.@global_rules[0].geoip_url='https://github.com/Loyalsoldier/geoip/releases/latest/download/geoip.dat' 2>/dev/null || true
 uci commit passwall2 2>/dev/null || true
 
+info "Removing Passwall2 package feeds..."
+if [ -f /etc/opkg/customfeeds.conf ]; then
+    sed -i '/passwall/d' /etc/opkg/customfeeds.conf
+fi
+
 rm -f /usr/lib/lua/luci/controller/vpndomains.lua 2>/dev/null || true
 rm -f /usr/lib/lua/luci/model/cbi/vpndomains.lua 2>/dev/null || true
 rm -f /etc/config/vpndomains 2>/dev/null || true

@@ -10,7 +10,7 @@
 | Протоколы | VLESS XHTTP Reality + Hysteria 2 | VLESS Reality + Hysteria 2 |
 | Управление | LuCI веб-интерфейс | SSH + конфиг файл |
 | Список доменов | geosite:ru-blocked (авто-обновление) | itdoginfo (cron каждые 8ч) |
-| Кастомные домены | LuCI: Services → VPN Domains | LuCI: Services → VPN Domains |
+| Кастомные домены | PassWall2 → Rule → Custom VPN Domains | LuCI: Services → VPN Domains |
 
 ---
 
@@ -28,10 +28,12 @@
 sh <(wget -O - https://raw.githubusercontent.com/BalgeetTjinder/domain-routing-openwrt/master/passwall2-install.sh)
 ```
 
-Скрипт спросит:
-- IP адрес VPS
-- Данные VLESS XHTTP Reality (UUID, Public Key, Short ID, SNI, Port, Path)
-- Данные Hysteria 2 (пароль, домен, Port, Mbps)
+После установки:
+
+1. LuCI → Services → PassWall2 → Node List
+2. Отредактируй ноду **VLESS-XHTTP-Reality** — заполни данные VPS (Address, UUID, Public Key, Short Id)
+3. (Опционально) Отредактируй ноду **Hysteria2** — заполни данные (Address, Password, SNI)
+4. Basic Settings → Main Node = **Main-Shunt** → Enable → Save & Apply
 
 ### Что устанавливается
 
@@ -54,9 +56,9 @@ Passwall2 (Xray Shunt) проверяет домен
 
 ### Кастомные домены
 
-Открой в LuCI: **Services → VPN Domains**
+Открой в LuCI: **Services → PassWall2 → Rule → Custom VPN Domains → Domain List**
 
-Добавь домены по одному. При сохранении Passwall2 автоматически перезапустится.
+Добавь домены (по одному на строку). Save & Apply → Passwall2 перезапустится.
 
 ### Полезные команды
 

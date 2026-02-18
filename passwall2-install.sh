@@ -182,7 +182,7 @@ configure_passwall2() {
     uci set passwall2.pw2_shunt.Russia_Block='pw2_vless'
     uci set passwall2.pw2_shunt.pw2_custom='pw2_vless'
 
-    uci set passwall2.@global[0].enabled='1'
+    uci set passwall2.@global[0].enabled='0'
     uci set passwall2.@global[0].node='pw2_shunt'
     uci set passwall2.@global[0].remote_dns='1.1.1.1'
     uci set passwall2.@global[0].remote_dns_protocol='tcp'
@@ -226,24 +226,27 @@ download_geodata() {
     fi
 }
 
-start_services() {
-    info "Starting Passwall2..."
+finish() {
     /etc/init.d/passwall2 enable 2>/dev/null || true
-    /etc/init.d/passwall2 restart 2>/dev/null || true
-    sleep 3
     echo ""
     header "=========================================="
     header "        INSTALLATION COMPLETE"
     header "=========================================="
     echo ""
-    echo "Next: LuCI -> Services -> PassWall2 -> Node List"
-    echo "  Edit VLESS-XHTTP-Reality and Hysteria2 with your VPS data."
-    echo "  Global Settings -> enable -> Save & Apply"
+    echo "Passwall2 is installed but NOT enabled yet."
     echo ""
-    echo "Custom domains: Passwall2 -> Shunt Rules -> Custom VPN Domains"
-    echo "Hysteria2 with Salamander obfs: Add node with Type=Hysteria2 (uses hysteria package)"
+    echo "Step 1: Open LuCI -> Services -> PassWall2 -> Node List"
+    echo "Step 2: Edit 'VLESS-XHTTP-Reality' node — fill in your VPS data:"
+    echo "          Address, UUID, Public Key, Short Id"
+    echo "Step 3: (Optional) Edit 'Hysteria2' node with your Hysteria2 VPS data"
+    echo "Step 4: Basic Settings -> Main Node = Main-Shunt -> Enable -> Save & Apply"
     echo ""
-    echo "  logread | grep passwall2   /etc/init.d/passwall2 restart"
+    echo "Custom domains: PassWall2 -> Rule -> 'Custom VPN Domains' -> Domain List"
+    echo "Hysteria2 + Salamander obfs: create node with Type=Hysteria2 (uses hysteria binary)"
+    echo ""
+    echo "Useful commands:"
+    echo "  logread | grep passwall2        # view logs"
+    echo "  /etc/init.d/passwall2 restart   # restart service"
     echo ""
 }
 
@@ -265,4 +268,4 @@ add_passwall2_feed
 install_packages
 configure_passwall2
 download_geodata
-start_services
+finish
