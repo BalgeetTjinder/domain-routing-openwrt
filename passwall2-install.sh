@@ -207,6 +207,17 @@ configure_passwall2() {
     info "Passwall2 routing structure configured"
 }
 
+fix_tmp_exec() {
+    if mount | grep -q "tmp.*noexec"; then
+        info "Fixing /tmp noexec (required for Xray/Hysteria binaries)..."
+        mount -o remount,exec /tmp
+    fi
+    if ! grep -q "remount,exec /tmp" /etc/rc.local 2>/dev/null; then
+        sed -i '/^exit 0/i mount -o remount,exec /tmp' /etc/rc.local 2>/dev/null || true
+        info "/tmp exec persisted in /etc/rc.local"
+    fi
+}
+
 download_geodata() {
     info "Downloading geosite/geoip (Russia rules)..."
     GEO_DIR="/usr/share/v2ray"
@@ -235,14 +246,23 @@ finish() {
     echo ""
     echo "Passwall2 is installed but NOT enabled yet."
     echo ""
-    echo "Step 1: Open LuCI -> Services -> PassWall2 -> Node List"
-    echo "Step 2: Edit 'VLESS-XHTTP-Reality' node — fill in your VPS data:"
-    echo "          Address, UUID, Public Key, Short Id"
-    echo "Step 3: (Optional) Edit 'Hysteria2' node with your Hysteria2 VPS data"
-    echo "Step 4: Basic Settings -> Main Node = Main-Shunt -> Enable -> Save & Apply"
+    echo "Add your VPN nodes via LuCI (pick one method):"
+    echo ""
+    echo "  Option A — Subscription:"
+    echo "    Services -> PassWall2 -> Node Subscribe -> Add"
+    echo "    Paste subscription URL -> Save & Apply -> Manual Subscribe"
+    echo ""
+    echo "  Option B — Manual node:"
+    echo "    Services -> PassWall2 -> Node List -> Add"
+    echo "    Fill in your VPS data -> Save & Apply"
+    echo ""
+    echo "Then enable:"
+    echo "  1. Basic Settings -> Main Node = Main-Shunt"
+    echo "  2. Click on Main-Shunt -> set Russia_Block and Custom VPN Domains"
+    echo "     to your VPN node -> Save & Apply"
+    echo "  3. Basic Settings -> Enable -> Save & Apply"
     echo ""
     echo "Custom domains: PassWall2 -> Rule -> 'Custom VPN Domains' -> Domain List"
-    echo "Hysteria2 + Salamander obfs: create node with Type=Hysteria2 (uses hysteria binary)"
     echo ""
     echo "Useful commands:"
     echo "  logread | grep passwall2        # view logs"
@@ -266,6 +286,7 @@ esac
 check_system
 add_passwall2_feed
 install_packages
+fix_tmp_exec
 configure_passwall2
 download_geodata
 finish
