@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Passwall2 Domain Routing - VLESS XHTTP Reality + Hysteria2
+# Passwall2 Domain Routing — VLESS XHTTP Reality + Hysteria2
 # OpenWrt 23.05+ / 24.10+
 # https://github.com/BalgeetTjinder/domain-routing-openwrt
 
@@ -13,6 +13,7 @@ info()   { printf "${GREEN}[*] %s${NC}\n" "$1"; }
 error()  { printf "${RED}[!] %s${NC}\n" "$1"; }
 header() { printf "${BLUE}%s${NC}\n" "$1"; }
 
+# ── System check ─────────────────────────────────────────────
 check_system() {
     MODEL=$(cat /tmp/sysinfo/model 2>/dev/null || echo "Unknown")
     if [ -f /etc/os-release ]; then
@@ -34,10 +35,9 @@ check_system() {
     fi
 }
 
+# ── Add Passwall2 package feed ───────────────────────────────
 add_passwall2_feed() {
     info "Configuring Passwall2 package feed..."
-    RELEASE=""
-    ARCH=""
     if [ -f /etc/openwrt_release ]; then
         . /etc/openwrt_release
         RELEASE="${DISTRIB_RELEASE%.*}"
@@ -51,7 +51,8 @@ add_passwall2_feed() {
         info "Adding feed for OpenWrt $RELEASE ($ARCH)..."
         wget -q -O /tmp/passwall.pub \
             https://master.dl.sourceforge.net/project/openwrt-passwall-build/passwall.pub \
-            2>/dev/null && opkg-key add /tmp/passwall.pub 2>/dev/null || true
+            2>/dev/null && opkg-key add /tmp/passwall.pub 2>/dev/null
+        rm -f /tmp/passwall.pub
         for feed in passwall_luci passwall_packages passwall2; do
             echo "src/gz ${feed} https://master.dl.sourceforge.net/project/openwrt-passwall-build/releases/packages-${RELEASE}/${ARCH}/${feed}" \
                 >> /etc/opkg/customfeeds.conf
@@ -59,13 +60,13 @@ add_passwall2_feed() {
     else
         info "Passwall2 feed already configured"
     fi
-    info "Updating package lists..."
     opkg update >/dev/null 2>&1 || true
-    info "Done"
 }
 
+# ── Install packages ─────────────────────────────────────────
 install_packages() {
     info "Installing packages..."
+
     if ! opkg list-installed 2>/dev/null | grep -q "^dnsmasq-full "; then
         info "Replacing dnsmasq with dnsmasq-full..."
         cd /tmp/ || exit 1
@@ -73,46 +74,64 @@ install_packages() {
         opkg remove dnsmasq >/dev/null 2>&1 || true
         opkg install dnsmasq-full --cache /tmp/ >/dev/null 2>&1 || true
         [ -f /etc/config/dhcp-opkg ] && mv /etc/config/dhcp-opkg /etc/config/dhcp
-    else
-        info "dnsmasq-full already installed"
     fi
 
-    CORE_PKGS="luci-app-passwall2 xray-core geoview v2ray-geoip v2ray-geosite"
-    KERN_PKGS="kmod-nft-tproxy kmod-nft-socket kmod-tun kmod-inet-diag"
-    UTIL_PKGS="ca-bundle curl"
-    for pkg in $CORE_PKGS $KERN_PKGS $UTIL_PKGS; do
+    PKGS="luci-app-passwall2 xray-core geoview v2ray-geoip v2ray-geosite"
+    PKGS="$PKGS kmod-nft-tproxy kmod-nft-socket kmod-tun kmod-inet-diag"
+    PKGS="$PKGS ca-bundle curl"
+    for pkg in $PKGS; do
         if ! opkg list-installed 2>/dev/null | grep -q "^${pkg} "; then
             info "Installing $pkg..."
-            opkg install "$pkg" >/dev/null 2>&1 || error "Warning: failed to install $pkg"
-        else
-            info "$pkg already installed"
+            opkg install "$pkg" >/dev/null 2>&1 || error "Failed: $pkg"
         fi
     done
 
-    # Optional: standalone Hysteria2 client (for Salamander obfs; Xray does not support it)
-    if ! opkg list-installed 2>/dev/null | grep -q "^hysteria "; then
-        info "Installing hysteria (optional, for Hysteria2 nodes with Salamander obfs)..."
-        opkg install hysteria >/dev/null 2>&1 || info "hysteria not in feed or skipped"
-    fi
+    opkg install hysteria >/dev/null 2>&1 || true
 
-    if ! opkg list-installed 2>/dev/null | grep -q "^luci-app-passwall2 "; then
-        error "luci-app-passwall2 installation failed"
-        exit 1
-    fi
-    if ! opkg list-installed 2>/dev/null | grep -q "^xray-core "; then
-        error "xray-core installation failed"
-        exit 1
-    fi
+    for pkg in luci-app-passwall2 xray-core; do
+        if ! opkg list-installed 2>/dev/null | grep -q "^${pkg} "; then
+            error "$pkg installation failed — cannot continue"
+            exit 1
+        fi
+    done
 
-    if [ -f /etc/uci-defaults/luci-passwall2 ]; then
-        info "Initializing Passwall2 config..."
-        sh /etc/uci-defaults/luci-passwall2 >/dev/null 2>&1 || true
-    fi
+    [ -f /etc/uci-defaults/luci-passwall2 ] && sh /etc/uci-defaults/luci-passwall2 >/dev/null 2>&1
     info "All packages installed"
 }
 
+# ── Fix /tmp noexec + prestart hook ──────────────────────────
+fix_tmp_exec() {
+    if mount | grep " on /tmp " | grep -q "noexec"; then
+        info "Remounting /tmp with exec..."
+        mount -o remount,exec /tmp
+    fi
+
+    cat > /etc/passwall2-prestart.sh << 'PRESTART'
+#!/bin/sh
+mount -o remount,exec /tmp 2>/dev/null
+mkdir -p /tmp/etc/passwall2/bin /tmp/etc/passwall2/script_func
+for bin in xray hysteria; do
+    src=$(command -v "$bin" 2>/dev/null)
+    [ -n "$src" ] && cp -p "$src" /tmp/etc/passwall2/bin/"$bin" 2>/dev/null
+done
+PRESTART
+    chmod +x /etc/passwall2-prestart.sh
+    sh /etc/passwall2-prestart.sh
+
+    if ! grep -q "passwall2-prestart" /etc/rc.local 2>/dev/null; then
+        if grep -q '^exit 0' /etc/rc.local 2>/dev/null; then
+            sed -i '/^exit 0/i sh /etc/passwall2-prestart.sh' /etc/rc.local
+        else
+            printf '\nsh /etc/passwall2-prestart.sh\nexit 0\n' >> /etc/rc.local
+        fi
+        info "Prestart hook added to /etc/rc.local"
+    fi
+}
+
+# ── Configure Passwall2 ─────────────────────────────────────
 configure_passwall2() {
-    info "Configuring Passwall2 routing structure..."
+    info "Configuring Passwall2..."
+
     if [ ! -s /etc/config/passwall2 ]; then
         if [ -f /usr/share/passwall2/0_default_config ]; then
             cp /usr/share/passwall2/0_default_config /etc/config/passwall2
@@ -121,44 +140,12 @@ configure_passwall2() {
         fi
     fi
 
-    for section in examplenode rulenode; do
-        if uci -q get passwall2."$section" >/dev/null 2>&1; then
-            uci delete passwall2."$section" 2>/dev/null || true
-        fi
+    # Remove default example nodes
+    for s in examplenode rulenode; do
+        uci -q get passwall2."$s" >/dev/null 2>&1 && uci delete passwall2."$s"
     done
 
-    uci set passwall2.pw2_vless=nodes
-    uci set passwall2.pw2_vless.remarks='VLESS-XHTTP-Reality'
-    uci set passwall2.pw2_vless.type='Xray'
-    uci set passwall2.pw2_vless.protocol='vless'
-    uci set passwall2.pw2_vless.address=''
-    uci set passwall2.pw2_vless.port='443'
-    uci set passwall2.pw2_vless.uuid=''
-    uci set passwall2.pw2_vless.encryption='none'
-    uci set passwall2.pw2_vless.tls='1'
-    uci set passwall2.pw2_vless.reality='1'
-    uci set passwall2.pw2_vless.reality_publicKey=''
-    uci set passwall2.pw2_vless.reality_shortId=''
-    uci set passwall2.pw2_vless.tls_serverName='www.microsoft.com'
-    uci set passwall2.pw2_vless.fingerprint='chrome'
-    uci set passwall2.pw2_vless.transport='xhttp'
-    uci set passwall2.pw2_vless.xhttp_mode='auto'
-    uci set passwall2.pw2_vless.xhttp_path='/'
-    uci set passwall2.pw2_vless.tcp_fast_open='0'
-    uci set passwall2.pw2_vless.tcpMptcp='0'
-
-    uci set passwall2.pw2_hy2=nodes
-    uci set passwall2.pw2_hy2.remarks='Hysteria2'
-    uci set passwall2.pw2_hy2.type='Xray'
-    uci set passwall2.pw2_hy2.protocol='hysteria2'
-    uci set passwall2.pw2_hy2.address=''
-    uci set passwall2.pw2_hy2.port='8443'
-    uci set passwall2.pw2_hy2.tls='1'
-    uci set passwall2.pw2_hy2.tls_serverName=''
-    uci set passwall2.pw2_hy2.hysteria2_auth_password=''
-    uci set passwall2.pw2_hy2.hysteria2_up_mbps='100'
-    uci set passwall2.pw2_hy2.hysteria2_down_mbps='100'
-
+    # ── Shunt rules ──
     uci set passwall2.Russia_Block=shunt_rules
     uci set passwall2.Russia_Block.remarks='Russia_Block'
     uci set passwall2.Russia_Block.network='tcp,udp'
@@ -170,6 +157,7 @@ configure_passwall2() {
     uci set passwall2.pw2_custom.network='tcp,udp'
     uci set passwall2.pw2_custom.domain_list=''
 
+    # ── Main-Shunt node ──
     uci set passwall2.pw2_shunt=nodes
     uci set passwall2.pw2_shunt.remarks='Main-Shunt'
     uci set passwall2.pw2_shunt.type='Xray'
@@ -179,10 +167,10 @@ configure_passwall2() {
     uci set passwall2.pw2_shunt.domainMatcher='hybrid'
     uci set passwall2.pw2_shunt.write_ipset_direct='0'
     uci set passwall2.pw2_shunt.enable_geoview_ip='0'
-    # Safe defaults: do not route to empty placeholder node.
     uci set passwall2.pw2_shunt.Russia_Block='_direct'
     uci set passwall2.pw2_shunt.pw2_custom='_direct'
 
+    # ── Global settings ──
     uci set passwall2.@global[0].enabled='0'
     uci set passwall2.@global[0].node='pw2_shunt'
     uci set passwall2.@global[0].remote_dns='1.1.1.1'
@@ -190,73 +178,48 @@ configure_passwall2() {
     uci set passwall2.@global[0].localhost_proxy='1'
     uci set passwall2.@global[0].client_proxy='1'
     uci set passwall2.@global[0].log_node='1'
-    uci set passwall2.@global[0].loglevel='error'
+    uci set passwall2.@global[0].loglevel='warning'
 
-    # Some builds hit rule_update.lua cron parse errors; keep updates manual by default.
+    # ── Geodata URLs (runetfreedom Russia rules) ──
     uci set passwall2.@global_rules[0].auto_update='0'
     uci set passwall2.@global_rules[0].geosite_update='1'
     uci set passwall2.@global_rules[0].geoip_update='1'
     uci set passwall2.@global_rules[0].geosite_url='https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geosite.dat'
     uci set passwall2.@global_rules[0].geoip_url='https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geoip.dat'
 
+    # ── Forwarding (transparent proxy all ports) ──
     uci set passwall2.@global_forwarding[0].prefer_nft='1'
     uci set passwall2.@global_forwarding[0].tcp_redir_ports='1:65535'
     uci set passwall2.@global_forwarding[0].udp_redir_ports='1:65535'
     uci set passwall2.@global_forwarding[0].tcp_no_redir_ports='disable'
     uci set passwall2.@global_forwarding[0].udp_no_redir_ports='disable'
 
-    uci commit passwall2 2>/dev/null || true
+    uci commit passwall2
     mkdir -p /tmp/etc/passwall2/script_func
-    info "Passwall2 routing structure configured"
+    info "Passwall2 configured"
 }
 
-fix_tmp_exec() {
-    if mount | grep " on /tmp " | grep -q "noexec"; then
-        info "Fixing /tmp noexec (required for Xray/Hysteria binaries)..."
-        mount -o remount,exec /tmp
-    fi
-
-    # Passwall2 copies binaries to /tmp/etc/passwall2/bin/ using plain `cp`,
-    # which strips the execute bit (busybox cp applies umask → 0644).
-    # Fix: write a prestart script that pre-copies with cp -p (preserves +x).
-    cat > /etc/passwall2-prestart.sh << 'EOF'
-#!/bin/sh
-mount -o remount,exec /tmp 2>/dev/null || true
-mkdir -p /tmp/etc/passwall2/bin /tmp/etc/passwall2/script_func
-for _b in xray hysteria; do
-    _p=$(command -v "$_b" 2>/dev/null)
-    [ -n "$_p" ] && cp -p "$_p" /tmp/etc/passwall2/bin/"$_b" 2>/dev/null || true
-done
-EOF
-    chmod +x /etc/passwall2-prestart.sh
-    sh /etc/passwall2-prestart.sh
-
-    if ! grep -q "passwall2-prestart" /etc/rc.local 2>/dev/null; then
-        sed -i '/^exit 0/i sh /etc/passwall2-prestart.sh' /etc/rc.local 2>/dev/null || \
-            printf '\nsh /etc/passwall2-prestart.sh\n' >> /etc/rc.local
-        info "Passwall2 prestart hooked into /etc/rc.local"
-    fi
-}
-
+# ── Download Russia geodata ──────────────────────────────────
 download_geodata() {
     info "Downloading geosite/geoip (Russia rules)..."
     GEO_DIR="/usr/share/v2ray"
     mkdir -p "$GEO_DIR"
-    GEOSITE_URL="https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geosite.dat"
-    GEOIP_URL="https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geoip.dat"
-    if curl -sL --max-time 60 "$GEOSITE_URL" -o "$GEO_DIR/geosite.dat" 2>/dev/null; then
-        GEOSITE_SIZE=$(wc -c < "$GEO_DIR/geosite.dat" 2>/dev/null || echo "?")
-        info "geosite.dat downloaded (${GEOSITE_SIZE} bytes)"
+    BASE="https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download"
+
+    if curl -sL --max-time 60 "$BASE/geosite.dat" -o "$GEO_DIR/geosite.dat"; then
+        SIZE=$(wc -c < "$GEO_DIR/geosite.dat" 2>/dev/null)
+        info "geosite.dat — ${SIZE} bytes"
     else
         error "Failed to download geosite.dat"
     fi
-    if curl -sL --max-time 60 "$GEOIP_URL" -o "$GEO_DIR/geoip.dat" 2>/dev/null; then
+    if curl -sL --max-time 60 "$BASE/geoip.dat" -o "$GEO_DIR/geoip.dat"; then
         info "geoip.dat downloaded"
     else
         error "Failed to download geoip.dat"
     fi
 }
 
+# ── Finish ───────────────────────────────────────────────────
 finish() {
     /etc/init.d/passwall2 enable 2>/dev/null || true
     echo ""
@@ -264,32 +227,30 @@ finish() {
     header "        INSTALLATION COMPLETE"
     header "=========================================="
     echo ""
-    echo "Passwall2 is installed but NOT enabled yet."
+    echo "Passwall2 is installed but NOT enabled."
     echo ""
-    echo "Add your VPN nodes via LuCI (pick one method):"
+    echo "1. Add VPN nodes:"
+    echo "   Node Subscribe -> Add -> paste URL -> Save & Apply -> Manual subscription"
+    echo "   — or —"
+    echo "   Node List -> Add the node via the link -> paste vless://... link"
     echo ""
-    echo "  Option A — Subscription:"
-    echo "    Services -> PassWall2 -> Node Subscribe -> Add"
-    echo "    Paste subscription URL -> Save & Apply -> Manual Subscribe"
+    echo "2. Configure routing:"
+    echo "   Basic Settings -> Main Node = Main-Shunt"
+    echo "   Edit Main-Shunt -> Russia_Block = [your VPN node]"
+    echo "                   -> Custom VPN Domains = [your VPN node]"
+    echo "                   -> Default = Direct Connection"
+    echo "   Save & Apply"
     echo ""
-    echo "  Option B — Manual node:"
-    echo "    Services -> PassWall2 -> Node List -> Add"
-    echo "    Fill in your VPS data -> Save & Apply"
+    echo "3. Enable:"
+    echo "   Basic Settings -> Enable -> Save & Apply"
     echo ""
-    echo "Then enable:"
-    echo "  1. Basic Settings -> Main Node = Main-Shunt"
-    echo "  2. Click on Main-Shunt -> set Russia_Block and Custom VPN Domains"
-    echo "     to your VPN node -> Save & Apply"
-    echo "  3. Basic Settings -> Enable -> Save & Apply"
+    echo "Custom domains: Rule Manage -> Custom VPN Domains -> Domain List"
     echo ""
-    echo "Custom domains: PassWall2 -> Rule -> 'Custom VPN Domains' -> Domain List"
-    echo ""
-    echo "Useful commands:"
-    echo "  logread | grep passwall2        # view logs"
-    echo "  /etc/init.d/passwall2 restart   # restart service"
+    echo "Commands: /etc/init.d/passwall2 restart | logread | grep passwall2"
     echo ""
 }
 
+# ── Main ─────────────────────────────────────────────────────
 echo ""
 header "=========================================="
 header "  Passwall2 Domain Routing"
