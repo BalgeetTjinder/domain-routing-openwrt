@@ -120,13 +120,13 @@ fi
 
 uci commit network 2>/dev/null || true
 
-# Remove sing-box config
-info "Removing sing-box config..."
+# Remove sing-box config and package
+info "Removing sing-box config and package..."
 rm -f /etc/sing-box/config.json
-
-# Remove sing-box package
-info "Removing sing-box package..."
 opkg remove sing-box 2>/dev/null || true
+# opkg leaves modified conffiles — remove them manually
+rm -f /etc/config/sing-box
+rm -rf /etc/sing-box
 
 # Restart services
 info "Restarting services..."
