@@ -15,9 +15,9 @@ header "=========================================="
 header "  Passwall2 Domain Routing — Uninstall"
 header "=========================================="
 echo ""
-echo "This will remove all Passwall2 configuration, geodata,"
-echo "runtime files, package feeds, and startup hooks."
-echo "Packages will NOT be removed."
+echo "This will completely remove Passwall2:"
+echo "  - Packages (luci-app-passwall2, xray-core, geoview, hysteria, ...)"
+echo "  - All config, geodata, runtime files, package feeds, startup hooks"
 echo ""
 printf "Continue? [y/N]: "
 read CONFIRM
@@ -39,19 +39,18 @@ info "Flushing nftables rules..."
 nft delete table inet passwall2 2>/dev/null || true
 nft delete table ip passwall2 2>/dev/null || true
 
-# 3. Reset config to package default
-info "Resetting Passwall2 config..."
-if [ -f /usr/share/passwall2/0_default_config ]; then
-    cp /usr/share/passwall2/0_default_config /etc/config/passwall2
-else
-    : > /etc/config/passwall2
-fi
-uci set passwall2.@global[0].enabled='0' 2>/dev/null || true
-uci -q delete passwall2.@global[0].node 2>/dev/null || true
-uci commit passwall2 2>/dev/null || true
+# 3. Remove packages
+info "Removing packages..."
+REMOVE_PKGS="luci-app-passwall2 xray-core geoview v2ray-geoip v2ray-geosite hysteria"
+for pkg in $REMOVE_PKGS; do
+    if opkg list-installed 2>/dev/null | grep -q "^${pkg} "; then
+        opkg remove "$pkg" >/dev/null 2>&1 && info "  Removed: $pkg"
+    fi
+done
 
-# 4. Remove geodata
-info "Removing geodata..."
+# 4. Remove config and geodata
+info "Removing config and geodata..."
+rm -f /etc/config/passwall2 2>/dev/null || true
 rm -f /usr/share/v2ray/geosite.dat /usr/share/v2ray/geoip.dat 2>/dev/null || true
 
 # 5. Remove package feeds
@@ -84,9 +83,6 @@ echo ""
 header "=========================================="
 header "  Uninstall complete"
 header "=========================================="
-echo ""
-echo "To remove packages:"
-echo "  opkg remove luci-app-passwall2 xray-core geoview v2ray-geoip v2ray-geosite hysteria"
 echo ""
 echo "Reinstall:"
 echo "  sh <(wget -O - https://raw.githubusercontent.com/BalgeetTjinder/domain-routing-openwrt/master/passwall2-install.sh)"
