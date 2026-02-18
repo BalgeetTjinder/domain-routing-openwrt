@@ -21,8 +21,6 @@ echo "This will remove:"
 echo "  - Passwall2 nodes (VLESS, Hysteria2, Shunt)"
 echo "  - Passwall2 shunt rules added by this script"
 echo "  - Passwall2 global configuration"
-echo "  - LuCI VPN Domains helper"
-echo "  - /etc/config/vpndomains"
 echo ""
 echo "The following will NOT be removed:"
 echo "  - luci-app-passwall2 package"
@@ -53,12 +51,14 @@ for section in pw2_vless pw2_hy2 pw2_shunt; do
     fi
 done
 
-# Remove shunt rule added by this script
+# Remove shunt rules added by this script
 info "Removing shunt rules..."
-if uci -q get passwall2.pw2_custom >/dev/null 2>&1; then
-    uci delete passwall2.pw2_custom 2>/dev/null || true
-    info "  Removed shunt rule: pw2_custom"
-fi
+for rule in pw2_custom Russia_Block; do
+    if uci -q get passwall2."$rule" >/dev/null 2>&1; then
+        uci delete passwall2."$rule" 2>/dev/null || true
+        info "  Removed shunt rule: $rule"
+    fi
+done
 
 # Reset global settings
 info "Resetting Passwall2 global settings..."
@@ -72,12 +72,14 @@ uci set passwall2.@global_rules[0].geoip_url='https://github.com/Loyalsoldier/ge
 
 uci commit passwall2 2>/dev/null || true
 
-# Remove LuCI VPN Domains helper
-info "Removing LuCI VPN Domains helper..."
-rm -f /usr/lib/lua/luci/controller/vpndomains.lua
-rm -f /usr/lib/lua/luci/model/cbi/vpndomains.lua
-rm -f /etc/config/vpndomains
-rm -f /tmp/luci-indexcache* 2>/dev/null || true
+# Remove LuCI VPN Domains helper (installed by older version of this script)
+rm -f /usr/lib/lua/luci/controller/vpndomains.lua 2>/dev/null || true
+rm -f /usr/lib/lua/luci/model/cbi/vpndomains.lua 2>/dev/null || true
+rm -f /etc/config/vpndomains 2>/dev/null || true
+
+# Clear LuCI caches
+rm -f /tmp/luci-indexcache /tmp/luci-indexcache.* 2>/dev/null || true
+rm -rf /tmp/luci-modulecache 2>/dev/null || true
 
 # Restart LuCI
 /etc/init.d/rpcd restart 2>/dev/null || true
