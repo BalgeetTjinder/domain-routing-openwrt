@@ -36,34 +36,26 @@ info "Stopping Passwall2..."
 /etc/init.d/passwall2 stop 2>/dev/null || true
 /etc/init.d/passwall2 disable 2>/dev/null || true
 
-info "Removing Passwall2 nodes..."
-for section in pw2_vless pw2_hy2 pw2_shunt examplenode rulenode; do
-    if uci -q get passwall2."$section" >/dev/null 2>&1; then
-        uci delete passwall2."$section" 2>/dev/null || true
-        info "  Removed: $section"
-    fi
-done
+info "Resetting /etc/config/passwall2 to package default..."
+if [ -f /usr/share/passwall2/0_default_config ]; then
+    cp /usr/share/passwall2/0_default_config /etc/config/passwall2 2>/dev/null || true
+else
+    rm -f /etc/config/passwall2 2>/dev/null || true
+    touch /etc/config/passwall2
+fi
 
-info "Removing shunt rules..."
-for rule in pw2_custom Russia_Block; do
-    if uci -q get passwall2."$rule" >/dev/null 2>&1; then
-        uci delete passwall2."$rule" 2>/dev/null || true
-        info "  Removed shunt rule: $rule"
-    fi
-done
-
-info "Resetting Passwall2 global..."
 uci set passwall2.@global[0].enabled='0' 2>/dev/null || true
 uci -q delete passwall2.@global[0].node 2>/dev/null || true
-uci set passwall2.@global_rules[0].auto_update='0' 2>/dev/null || true
-uci set passwall2.@global_rules[0].geosite_url='https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat' 2>/dev/null || true
-uci set passwall2.@global_rules[0].geoip_url='https://github.com/Loyalsoldier/geoip/releases/latest/download/geoip.dat' 2>/dev/null || true
 uci commit passwall2 2>/dev/null || true
 
 info "Removing Passwall2 package feeds..."
 if [ -f /etc/opkg/customfeeds.conf ]; then
-    sed -i '/passwall/d' /etc/opkg/customfeeds.conf
+    sed -i '/openwrt-passwall-build\/releases\/packages-/d' /etc/opkg/customfeeds.conf
 fi
+
+info "Removing /tmp exec workaround and runtime cache..."
+sed -i '/mount -o remount,exec \/tmp/d' /etc/rc.local 2>/dev/null || true
+rm -rf /tmp/etc/passwall2 2>/dev/null || true
 
 rm -f /usr/lib/lua/luci/controller/vpndomains.lua 2>/dev/null || true
 rm -f /usr/lib/lua/luci/model/cbi/vpndomains.lua 2>/dev/null || true

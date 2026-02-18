@@ -179,8 +179,9 @@ configure_passwall2() {
     uci set passwall2.pw2_shunt.domainMatcher='hybrid'
     uci set passwall2.pw2_shunt.write_ipset_direct='1'
     uci set passwall2.pw2_shunt.enable_geoview_ip='1'
-    uci set passwall2.pw2_shunt.Russia_Block='pw2_vless'
-    uci set passwall2.pw2_shunt.pw2_custom='pw2_vless'
+    # Safe defaults: do not route to empty placeholder node.
+    uci set passwall2.pw2_shunt.Russia_Block='_direct'
+    uci set passwall2.pw2_shunt.pw2_custom='_direct'
 
     uci set passwall2.@global[0].enabled='0'
     uci set passwall2.@global[0].node='pw2_shunt'
@@ -191,7 +192,8 @@ configure_passwall2() {
     uci set passwall2.@global[0].log_node='1'
     uci set passwall2.@global[0].loglevel='error'
 
-    uci set passwall2.@global_rules[0].auto_update='1'
+    # Some builds hit rule_update.lua cron parse errors; keep updates manual by default.
+    uci set passwall2.@global_rules[0].auto_update='0'
     uci set passwall2.@global_rules[0].geosite_update='1'
     uci set passwall2.@global_rules[0].geoip_update='1'
     uci set passwall2.@global_rules[0].geosite_url='https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geosite.dat'
@@ -209,12 +211,16 @@ configure_passwall2() {
 }
 
 fix_tmp_exec() {
-    if mount | grep -q "tmp.*noexec"; then
+    if mount | grep " on /tmp " | grep -q "noexec"; then
         info "Fixing /tmp noexec (required for Xray/Hysteria binaries)..."
         mount -o remount,exec /tmp
     fi
     if ! grep -q "remount,exec /tmp" /etc/rc.local 2>/dev/null; then
-        sed -i '/^exit 0/i mount -o remount,exec /tmp' /etc/rc.local 2>/dev/null || true
+        if grep -q '^exit 0' /etc/rc.local 2>/dev/null; then
+            sed -i '/^exit 0/i mount -o remount,exec /tmp' /etc/rc.local 2>/dev/null || true
+        else
+            printf '\nmount -o remount,exec /tmp\nexit 0\n' >> /etc/rc.local
+        fi
         info "/tmp exec persisted in /etc/rc.local"
     fi
 }
