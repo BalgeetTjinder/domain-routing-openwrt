@@ -8,8 +8,9 @@
 |---|---|---|
 | VPN клиент | Passwall2 + Xray | Sing-box |
 | Протоколы | VLESS XHTTP Reality + Hysteria 2 | VLESS Reality + Hysteria 2 |
+| Балансировка | Auto-Balancer (leastPing) | urltest |
 | Управление | LuCI веб-интерфейс | SSH + конфиг файл |
-| Список доменов | geosite:ru-blocked | itdoginfo (cron каждые 8ч) |
+| Список доменов | geosite:ru-blocked (runetfreedom, авто-обновление) | itdoginfo (cron каждые 8ч) |
 | Кастомные домены | PassWall2 → Rule Manage → Custom VPN Domains | LuCI: Services → VPN Domains |
 
 ---
@@ -18,7 +19,7 @@
 
 ### Требования
 
-- OpenWrt **23.05+** или **24.10+**
+- OpenWrt **23.05+** или **24.10+** (SNAPSHOT тоже поддерживается)
 - VPS с VLESS XHTTP Reality и/или Hysteria 2
 - Доступ к роутеру по SSH
 
@@ -32,54 +33,75 @@ sh <(wget -O - https://raw.githubusercontent.com/BalgeetTjinder/domain-routing-o
 
 1. **Добавь VPN ноды** (один из способов):
    - `Node Subscribe` → Add → вставь URL подписки → Save & Apply → Manual subscription
-   - `Node List` → Add the node via the link → вставь `vless://...` ссылку
+   - `Node List` → Add the node via the link → вставь `vless://...` или `hy2://...` ссылку
    - `Node List` → Add → заполни вручную
 
-2. **Настрой маршрутизацию:**
-   - `Basic Settings` → Main Node = **Main-Shunt**
-   - Нажми Edit у Main-Shunt:
-     - `Russia_Block` → твоя VPN нода
-     - `Custom VPN Domains` → твоя VPN нода
-     - `Default` → Direct Connection
-   - Save & Apply
+2. **Добавь ноды в балансировщик:**
+   - Открой **Auto-Balancer** → добавь свои VLESS и Hysteria2 ноды
+   - Стратегия leastPing — автоматически выбирает самый быстрый протокол
 
 3. **Включи:**
    - `Basic Settings` → Enable → Save & Apply
 
+Маршрутизация уже преднастроена скриптом:
+- `Russia_Block` (geosite:ru-blocked + geoip:ru-blocked) → Auto-Balancer → VPN
+- `Custom VPN Domains` → Auto-Balancer → VPN
+- Всё остальное → Direct (без VPN)
+
 ### Что устанавливается
 
-- `luci-app-passwall2` — веб-интерфейс
-- `xray-core` — VPN движок
-- `geoview`, `v2ray-geosite`, `v2ray-geoip` — база доменов
-- `dnsmasq-full` — DNS
-- `hysteria` — клиент Hysteria2 (опционально)
+- `luci-app-passwall2` — LuCI веб-интерфейс
+- `xray-core` — основной VPN движок (VLESS, Reality, XHTTP)
+- `hysteria` — клиент Hysteria2
+- `geoview` — конвертер geo в rulesets для sing-box
+- `v2ray-geosite`, `v2ray-geoip` — заменяются на [runetfreedom](https://github.com/runetfreedom/russia-v2ray-rules-dat) данные
+- `dnsmasq-full` — DNS с поддержкой nftset
+- `kmod-nft-socket`, `kmod-nft-tproxy` — модули для прозрачного прокси
 
 ### Как работает
 
 ```
 Запрос к youtube.com
         ↓
-Passwall2 (Xray Shunt) проверяет домен
+Passwall2 → Main-Shunt проверяет домен
         ↓
-Домен в geosite:ru-blocked? → Xray → VPS
+Домен в geosite:ru-blocked? → Auto-Balancer → лучший из VLESS/Hysteria2 → VPS
         ↓
-Нет → прямое соединение
+Домен в Custom VPN Domains? → Auto-Balancer → VPS
+        ↓
+Нет → прямое соединение (Direct)
 ```
 
 ### Кастомные домены
 
 LuCI: **Services → PassWall2 → Rule Manage → Custom VPN Domains → Domain List**
 
-По одному домену на строку. Save & Apply → Passwall2 перезапустится.
+По одному домену на строку. Save & Apply → PassWall2 перезапустится.
+
+### Geodata
+
+Источник: [runetfreedom/russia-v2ray-rules-dat](https://github.com/runetfreedom/russia-v2ray-rules-dat)
+
+Доступные категории: `geosite:ru-blocked`, `geoip:ru-blocked`, `geosite:refilter`, `geosite:category-ads-all` и другие.
+
+Файлы обновляются автоматически каждые 6 часов через cron. Ручное обновление:
+
+```bash
+/usr/bin/passwall2-update-geodata
+```
 
 ### Полезные команды
 
 ```bash
-/etc/init.d/passwall2 restart   # перезапуск
-logread | grep passwall2        # логи (может segfault — известный баг OpenWrt)
+/etc/init.d/passwall2 restart      # перезапуск
+/etc/init.d/passwall2 stop         # остановка
+logread | grep passwall2           # логи
+/usr/bin/passwall2-update-geodata  # обновить geodata вручную
 ```
 
 ### Удаление
+
+Полная очистка (сервис, пакеты, конфиги, runtime, geodata, feeds, LuCI cache):
 
 ```bash
 sh <(wget -O - https://raw.githubusercontent.com/BalgeetTjinder/domain-routing-openwrt/master/passwall2-uninstall.sh)

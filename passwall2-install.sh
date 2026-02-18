@@ -1,235 +1,301 @@
 #!/bin/sh
 
-# Passwall2 clean install for OpenWrt 23.05/24.10
-# VLESS + Hysteria2 templates + Russia routing presets
+# PassWall2 Installer for OpenWrt
+# Shunt routing: Russia_Block + Custom VPN Domains → VPN, Default → Direct
+# Geo source: runetfreedom (auto-updated every 6h)
+# https://github.com/BalgeetTjinder/domain-routing-openwrt
+
+set -e
 
 GREEN='\033[32;1m'
 RED='\033[31;1m'
+YELLOW='\033[33;1m'
 BLUE='\033[34;1m'
 NC='\033[0m'
 
 info()   { printf "${GREEN}[*] %s${NC}\n" "$1"; }
-warn()   { printf "${RED}[!] %s${NC}\n" "$1"; }
+warn()   { printf "${YELLOW}[!] %s${NC}\n" "$1"; }
+error()  { printf "${RED}[!] %s${NC}\n" "$1"; }
 header() { printf "${BLUE}%s${NC}\n" "$1"; }
+die()    { error "$1"; exit 1; }
 
-release=""
-arch=""
+GEODATA_DIR="/usr/share/v2ray"
+RUNETFREEDOM_URL="https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release"
+UPDATE_SCRIPT="/usr/bin/passwall2-update-geodata"
+
+# ── Checks ────────────────────────────────────────────────────────────
 
 check_system() {
-    [ -f /etc/openwrt_release ] || {
-        warn "OpenWrt not detected"; exit 1;
-    }
+    [ "$(id -u)" -ne 0 ] && die "Run as root"
+    [ ! -f /etc/openwrt_release ] && die "OpenWrt not detected"
+
     . /etc/openwrt_release
-    release="${DISTRIB_RELEASE%.*}"
-    arch="$DISTRIB_ARCH"
-    [ -n "$release" ] && [ -n "$arch" ] || {
-        warn "Unable to detect OpenWrt release/arch"; exit 1;
-    }
-    model="$(cat /tmp/sysinfo/model 2>/dev/null || echo Unknown)"
-    header "Router: $model"
-    header "OpenWrt: $DISTRIB_RELEASE ($arch)"
+
+    MODEL=$(cat /tmp/sysinfo/model 2>/dev/null || echo "Unknown")
+    header "Router : ${MODEL}"
+    header "OpenWrt: ${DISTRIB_RELEASE} (${DISTRIB_ARCH})"
+
+    IS_SNAPSHOT=$(echo "${DISTRIB_RELEASE}" | grep -ci snapshot || true)
+    if [ "${IS_SNAPSHOT}" -eq 0 ]; then
+        VER_MAJOR=$(echo "${DISTRIB_RELEASE}" | cut -d. -f1)
+        VER_MINOR=$(echo "${DISTRIB_RELEASE}" | cut -d. -f2)
+        if [ "${VER_MAJOR}" -lt 23 ] || \
+           { [ "${VER_MAJOR}" -eq 23 ] && [ "${VER_MINOR}" -lt 5 ]; }; then
+            die "OpenWrt 23.05+ required (detected ${DISTRIB_RELEASE})"
+        fi
+    fi
 }
 
-add_feed() {
-    info "Configuring Passwall feed..."
-    feed_file="/etc/opkg/customfeeds.conf"
-    [ -f "$feed_file" ] || touch "$feed_file"
+# ── PassWall2 opkg feeds (SourceForge pre-built packages) ────────────
 
-    if ! grep -q "openwrt-passwall-build/releases/packages-${release}/${arch}" "$feed_file" 2>/dev/null; then
-        wget -qO /tmp/passwall.pub "https://master.dl.sourceforge.net/project/openwrt-passwall-build/passwall.pub" 2>/dev/null \
-            && opkg-key add /tmp/passwall.pub >/dev/null 2>&1
-        rm -f /tmp/passwall.pub
-        {
-            echo "src/gz passwall_packages https://master.dl.sourceforge.net/project/openwrt-passwall-build/releases/packages-${release}/${arch}/passwall_packages"
-            echo "src/gz passwall_luci https://master.dl.sourceforge.net/project/openwrt-passwall-build/releases/packages-${release}/${arch}/passwall_luci"
-            echo "src/gz passwall2 https://master.dl.sourceforge.net/project/openwrt-passwall-build/releases/packages-${release}/${arch}/passwall2"
-        } >> "$feed_file"
+add_feeds() {
+    info "Adding PassWall2 package feeds..."
+
+    wget -q -O /tmp/passwall.pub \
+        https://master.dl.sourceforge.net/project/openwrt-passwall-build/passwall.pub \
+        || die "Cannot download feed signing key"
+    opkg-key add /tmp/passwall.pub
+    rm -f /tmp/passwall.pub
+
+    . /etc/openwrt_release
+    ARCH="${DISTRIB_ARCH}"
+    IS_SNAPSHOT=$(echo "${DISTRIB_RELEASE}" | grep -ci snapshot || true)
+
+    FEED_BASE="https://master.dl.sourceforge.net/project/openwrt-passwall-build"
+    if [ "${IS_SNAPSHOT}" -gt 0 ]; then
+        FEED_PATH="snapshots/packages/${ARCH}"
     else
-        info "Feed already configured"
+        RELEASE_VER="${DISTRIB_RELEASE%.*}"
+        FEED_PATH="releases/packages-${RELEASE_VER}/${ARCH}"
     fi
 
-    info "Updating package indexes..."
-    opkg update >/dev/null 2>&1 || {
-        warn "opkg update failed"; exit 1;
-    }
+    [ ! -f /etc/opkg/customfeeds.conf ] && touch /etc/opkg/customfeeds.conf
+    sed -i '/passwall/d' /etc/opkg/customfeeds.conf
+
+    for feed in passwall_packages passwall2; do
+        echo "src/gz ${feed} ${FEED_BASE}/${FEED_PATH}/${feed}" \
+            >> /etc/opkg/customfeeds.conf
+    done
+
+    info "Feeds added (${FEED_PATH})"
 }
 
-install_dnsmasq_full() {
-    if opkg list-installed 2>/dev/null | grep -q "^dnsmasq-full "; then
-        return 0
-    fi
-
-    info "Replacing dnsmasq with dnsmasq-full..."
-    cd /tmp || return 1
-    opkg download dnsmasq-full >/dev/null 2>&1 || return 1
-    opkg remove dnsmasq >/dev/null 2>&1 || true
-    opkg install dnsmasq-full --cache /tmp >/dev/null 2>&1 || return 1
-    [ -f /etc/config/dhcp-opkg ] && mv /etc/config/dhcp-opkg /etc/config/dhcp
-    return 0
-}
+# ── Install packages ──────────────────────────────────────────────────
 
 install_packages() {
-    info "Installing required packages..."
-    install_dnsmasq_full || warn "dnsmasq-full setup failed, continuing"
+    info "Updating package lists..."
+    opkg update || die "opkg update failed — check internet"
 
-    required_pkgs="luci-app-passwall2 xray-core geoview v2ray-geoip v2ray-geosite ca-bundle curl"
-    for pkg in $required_pkgs; do
-        if ! opkg list-installed 2>/dev/null | grep -q "^${pkg} "; then
-            info "Installing $pkg..."
-            opkg install "$pkg" >/dev/null 2>&1 || {
-                warn "Failed to install required package: $pkg"; exit 1;
-            }
-        fi
-    done
-
-    optional_pkgs="hysteria kmod-nft-tproxy kmod-nft-socket kmod-nft-nat kmod-tun kmod-inet-diag"
-    for pkg in $optional_pkgs; do
-        if ! opkg list-installed 2>/dev/null | grep -q "^${pkg} "; then
-            info "Installing optional package: $pkg"
-            opkg install "$pkg" >/dev/null 2>&1 || warn "Optional package not installed: $pkg"
-        fi
-    done
-
-    [ -f /etc/uci-defaults/luci-passwall2 ] && sh /etc/uci-defaults/luci-passwall2 >/dev/null 2>&1
-}
-
-ensure_base_config() {
-    [ -s /etc/config/passwall2 ] && return 0
-    if [ -f /usr/share/passwall2/0_default_config ]; then
-        cp /usr/share/passwall2/0_default_config /etc/config/passwall2
+    # dnsmasq-full: ipset/nftset support required for domain-based routing
+    if ! opkg list-installed 2>/dev/null | grep -q "^dnsmasq-full "; then
+        info "Replacing dnsmasq → dnsmasq-full..."
+        cd /tmp
+        opkg download dnsmasq-full >/dev/null 2>&1 || true
+        opkg remove dnsmasq 2>/dev/null || true
+        opkg install dnsmasq-full --cache /tmp/ 2>/dev/null || true
+        [ -f /etc/config/dhcp-opkg ] && mv /etc/config/dhcp-opkg /etc/config/dhcp
+        cd /
     else
-        touch /etc/config/passwall2
+        info "dnsmasq-full already installed"
     fi
+
+    info "Installing luci-app-passwall2..."
+    opkg install luci-app-passwall2 || die "Failed to install luci-app-passwall2"
+
+    info "Installing xray-core..."
+    opkg install xray-core || warn "xray-core install failed (check storage)"
+
+    info "Installing hysteria..."
+    opkg install hysteria || warn "hysteria install failed (optional)"
+
+    # geoview: generates sing-box rulesets from .dat geo files
+    opkg install geoview 2>/dev/null || true
+
+    # v2ray geodata packages (creates /usr/share/v2ray/; files overwritten below)
+    opkg install v2ray-geoip v2ray-geosite 2>/dev/null || true
+
+    # nftables kernel modules for transparent proxy (fw4)
+    opkg install kmod-nft-socket kmod-nft-tproxy 2>/dev/null || true
+
+    info "All packages installed"
 }
+
+# ── Download runetfreedom geodata ─────────────────────────────────────
+
+install_geodata() {
+    info "Downloading runetfreedom geosite/geoip..."
+
+    mkdir -p "${GEODATA_DIR}"
+
+    wget -q -O "${GEODATA_DIR}/geosite.dat" "${RUNETFREEDOM_URL}/geosite.dat" \
+        || die "Failed to download geosite.dat"
+    wget -q -O "${GEODATA_DIR}/geoip.dat" "${RUNETFREEDOM_URL}/geoip.dat" \
+        || die "Failed to download geoip.dat"
+
+    info "Geodata ready (geosite:ru-blocked, geoip:ru-blocked, ...)"
+}
+
+# ── Configure PassWall2 via UCI ───────────────────────────────────────
 
 configure_passwall2() {
-    info "Applying Passwall2 presets..."
-    ensure_base_config
+    info "Configuring PassWall2 routing rules..."
 
-    # Clean demo sections if present
-    for s in examplenode rulenode; do
-        uci -q get "passwall2.${s}" >/dev/null 2>&1 && uci -q delete "passwall2.${s}"
-    done
+    # Stop service if running
+    /etc/init.d/passwall2 stop 2>/dev/null || true
 
-    # Core shunt rules
+    # ── Global settings ──
+    uci set passwall2.@global[0].enabled='0'
+    uci set passwall2.@global[0].remote_dns='1.1.1.1'
+    uci set passwall2.@global[0].tcp_proxy_way='tproxy'
+
+    # ── Forwarding: redirect all ports ──
+    uci set passwall2.@global_forwarding[0].tcp_no_redir_ports='disable'
+    uci set passwall2.@global_forwarding[0].udp_no_redir_ports='disable'
+    uci set passwall2.@global_forwarding[0].tcp_redir_ports='1:65535'
+    uci set passwall2.@global_forwarding[0].udp_redir_ports='1:65535'
+
+    # ── Geo update URLs (LuCI → Rule Manage → Update buttons) ──
+    uci set passwall2.@global_rules[0].geosite_url="${RUNETFREEDOM_URL}/geosite.dat" 2>/dev/null || true
+    uci set passwall2.@global_rules[0].geoip_url="${RUNETFREEDOM_URL}/geoip.dat" 2>/dev/null || true
+
+    # ── Shunt rule: Russia_Block ──
+    # Matches domains/IPs blocked in Russia → routed through VPN
     uci set passwall2.Russia_Block=shunt_rules
     uci set passwall2.Russia_Block.remarks='Russia_Block'
     uci set passwall2.Russia_Block.network='tcp,udp'
     uci set passwall2.Russia_Block.domain_list='geosite:ru-blocked'
     uci set passwall2.Russia_Block.ip_list='geoip:ru-blocked'
 
-    uci set passwall2.pw2_custom=shunt_rules
-    uci set passwall2.pw2_custom.remarks='Custom VPN Domains'
-    uci set passwall2.pw2_custom.network='tcp,udp'
-    uci set passwall2.pw2_custom.domain_list=''
+    # ── Shunt rule: Custom_VPN ──
+    # User adds domains via LuCI → Rule Manage → Edit this rule → Domain List
+    uci set passwall2.Custom_VPN=shunt_rules
+    uci set passwall2.Custom_VPN.remarks='Custom VPN Domains'
+    uci set passwall2.Custom_VPN.network='tcp,udp'
 
-    # Balancer template for VLESS nodes
-    uci set passwall2.bal_vless=nodes
-    uci set passwall2.bal_vless.remarks='BAL-VLESS'
-    uci set passwall2.bal_vless.type='Xray'
-    uci set passwall2.bal_vless.protocol='_balancing'
-    uci set passwall2.bal_vless.node_add_mode='batch'
-    uci set passwall2.bal_vless.node_group='default'
-    uci set passwall2.bal_vless.balancingStrategy='leastPing'
-    uci set passwall2.bal_vless.useCustomProbeUrl='1'
-    uci set passwall2.bal_vless.probeUrl='https://www.gstatic.com/generate_204'
-    uci set passwall2.bal_vless.probeInterval='1m'
+    # ── Node: Auto-Balancer (leastPing across VLESS + Hysteria2) ──
+    # After install, user adds their VPN nodes to this balancer via LuCI
+    uci set passwall2.autobalancer=nodes
+    uci set passwall2.autobalancer.remarks='Auto-Balancer'
+    uci set passwall2.autobalancer.type='Xray'
+    uci set passwall2.autobalancer.protocol='_balancer'
+    uci set passwall2.autobalancer.balancingStrategy='leastPing'
 
-    # Balancer template for Hysteria2 nodes
-    uci set passwall2.bal_hy2=nodes
-    uci set passwall2.bal_hy2.remarks='BAL-HY2'
-    uci set passwall2.bal_hy2.type='Xray'
-    uci set passwall2.bal_hy2.protocol='_balancing'
-    uci set passwall2.bal_hy2.node_add_mode='batch'
-    uci set passwall2.bal_hy2.node_group='default'
-    uci set passwall2.bal_hy2.balancingStrategy='leastPing'
-    uci set passwall2.bal_hy2.useCustomProbeUrl='1'
-    uci set passwall2.bal_hy2.probeUrl='https://www.gstatic.com/generate_204'
-    uci set passwall2.bal_hy2.probeInterval='1m'
+    # ── Node: Main-Shunt (routing logic) ──
+    uci set passwall2.myshunt=nodes
+    uci set passwall2.myshunt.remarks='Main-Shunt'
+    uci set passwall2.myshunt.type='Xray'
+    uci set passwall2.myshunt.protocol='_shunt'
+    uci set passwall2.myshunt.default='_direct'
+    uci set passwall2.myshunt.Russia_Block='autobalancer'
+    uci set passwall2.myshunt.Custom_VPN='autobalancer'
 
-    # Main shunt entrypoint
-    uci set passwall2.pw2_shunt=nodes
-    uci set passwall2.pw2_shunt.remarks='Main-Shunt'
-    uci set passwall2.pw2_shunt.type='Xray'
-    uci set passwall2.pw2_shunt.protocol='_shunt'
-    uci set passwall2.pw2_shunt.default_node='_direct'
-    uci set passwall2.pw2_shunt.domainStrategy='IPOnDemand'
-    uci set passwall2.pw2_shunt.domainMatcher='hybrid'
-    uci set passwall2.pw2_shunt.write_ipset_direct='0'
-    uci set passwall2.pw2_shunt.enable_geoview_ip='0'
-    uci set passwall2.pw2_shunt.Russia_Block='bal_vless'
-    uci set passwall2.pw2_shunt.pw2_custom='bal_hy2'
-
-    # Global
-    uci set passwall2.@global[0].enabled='1'
-    uci set passwall2.@global[0].node='pw2_shunt'
-
-    # Geodata source
-    uci set passwall2.@global_rules[0].auto_update='0'
-    uci set passwall2.@global_rules[0].geosite_update='1'
-    uci set passwall2.@global_rules[0].geoip_update='1'
-    uci set passwall2.@global_rules[0].geosite_url='https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/geosite.dat'
-    uci set passwall2.@global_rules[0].geoip_url='https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/geoip.dat'
+    # ── Activate shunt as main node (service stays disabled) ──
+    uci set passwall2.@global[0].node='myshunt'
 
     uci commit passwall2
+    info "PassWall2 routing configured"
 }
 
-download_geodata() {
-    info "Downloading geodata..."
-    geodir="/usr/share/v2ray"
-    mkdir -p "$geodir"
+# ── Geodata auto-update cron (every 6h) ──────────────────────────────
 
-    curl -fsSL --max-time 90 "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/geosite.dat" -o "$geodir/geosite.dat" || {
-        warn "Failed to download geosite.dat"; exit 1;
-    }
-    curl -fsSL --max-time 90 "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/geoip.dat" -o "$geodir/geoip.dat" || {
-        warn "Failed to download geoip.dat"; exit 1;
-    }
+setup_cron() {
+    info "Setting up geodata auto-update..."
 
-    [ -s "$geodir/geosite.dat" ] || { warn "geosite.dat is empty"; exit 1; }
-    [ -s "$geodir/geoip.dat" ] || { warn "geoip.dat is empty"; exit 1; }
+    cat > "${UPDATE_SCRIPT}" << 'SCRIPTEOF'
+#!/bin/sh
+GEODATA_DIR="/usr/share/v2ray"
+BASE_URL="https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release"
+UPDATED=0
+for f in geosite.dat geoip.dat; do
+    wget -q -O "${GEODATA_DIR}/${f}.tmp" "${BASE_URL}/${f}" 2>/dev/null && {
+        mv "${GEODATA_DIR}/${f}.tmp" "${GEODATA_DIR}/${f}"
+        UPDATED=1
+        logger -t passwall2-geo "Updated ${f}"
+    } || {
+        rm -f "${GEODATA_DIR}/${f}.tmp"
+        logger -t passwall2-geo "Failed to update ${f}"
+    }
+done
+[ "${UPDATED}" -eq 1 ] && /etc/init.d/passwall2 reload 2>/dev/null
+exit 0
+SCRIPTEOF
+
+    chmod +x "${UPDATE_SCRIPT}"
+
+    CRON_FILE="/etc/crontabs/root"
+    mkdir -p /etc/crontabs
+    touch "${CRON_FILE}"
+    sed -i '/passwall2-update-geodata/d' "${CRON_FILE}"
+    CRON_MIN=$(awk 'BEGIN{srand();printf "%d",rand()*59}')
+    echo "${CRON_MIN} */6 * * * ${UPDATE_SCRIPT}" >> "${CRON_FILE}"
+
+    /etc/init.d/cron enable 2>/dev/null || true
+    /etc/init.d/cron restart 2>/dev/null || true
+
+    info "Cron: geodata updates every 6 hours from runetfreedom"
 }
+
+# ── Finish ────────────────────────────────────────────────────────────
 
 finish() {
-    info "Enabling service..."
-    /etc/init.d/passwall2 enable >/dev/null 2>&1 || true
-    /etc/init.d/passwall2 restart >/dev/null 2>&1 || true
+    rm -f /tmp/luci-indexcache /tmp/luci-indexcache.* 2>/dev/null || true
+    rm -rf /tmp/luci-modulecache 2>/dev/null || true
+    /etc/init.d/rpcd restart 2>/dev/null || true
+    /etc/init.d/uhttpd restart 2>/dev/null || true
+
+    LAN_IP=$(uci -q get network.lan.ipaddr 2>/dev/null || echo "192.168.1.1")
 
     echo ""
     header "=========================================="
-    header "        INSTALLATION COMPLETE"
+    header "  PassWall2 installed successfully!"
     header "=========================================="
     echo ""
-    echo "Done presets:"
-    echo "  - Main Node: Main-Shunt"
-    echo "  - Russia_Block -> BAL-VLESS"
-    echo "  - Custom VPN Domains -> BAL-HY2"
-    echo "  - Default -> Direct"
+    echo "NEXT STEPS:"
     echo ""
-    echo "Your next step in LuCI:"
-    echo "  1) Services -> PassWall2 -> Node Subscribe / Node List"
-    echo "  2) Add your VLESS and Hysteria2 node URLs"
-    echo "  3) Save & Apply, then restart if needed:"
-    echo "     /etc/init.d/passwall2 restart"
+    echo "1. Open LuCI -> Services -> PassWall2"
+    echo "   http://${LAN_IP}/cgi-bin/luci/admin/services/passwall2"
+    echo ""
+    echo "2. Add your VPN nodes (any method):"
+    echo "   - Node Subscribe -> Add -> paste URL -> Save & Apply -> Manual subscription"
+    echo "   - Node List -> Add the node via the link -> paste vless://... or hy2://..."
+    echo "   - Node List -> Add -> fill in manually"
+    echo ""
+    echo "3. Edit 'Auto-Balancer' node:"
+    echo "   - Add your VLESS and Hysteria2 nodes to it"
+    echo "   - Strategy: leastPing (auto-selects fastest protocol)"
+    echo ""
+    echo "4. Basic Settings -> Enable -> Save & Apply"
+    echo ""
+    echo "PRE-CONFIGURED ROUTING:"
+    echo "  Russia_Block (geosite:ru-blocked + geoip:ru-blocked) -> VPN"
+    echo "  Custom VPN Domains (add yours in Rule Manage)       -> VPN"
+    echo "  Everything else                                     -> Direct"
+    echo ""
+    echo "Geodata: runetfreedom (auto-updates every 6h)"
     echo ""
 }
 
+# ── Main ──────────────────────────────────────────────────────────────
+
 echo ""
 header "=========================================="
-header "  Passwall2 Clean Install"
+header "  PassWall2 Installer"
+header "  VLESS + Hysteria2 | leastPing balancer"
 header "=========================================="
 echo ""
-printf "Continue? [y/N]: "
-read yn
-case "$yn" in
+
+printf "Install PassWall2 with pre-configured Russia routing? [y/N]: "
+read CONFIRM
+case ${CONFIRM} in
     [yY]|[yY][eE][sS]) ;;
     *) echo "Cancelled"; exit 0 ;;
 esac
+echo ""
 
 check_system
-add_feed
+add_feeds
 install_packages
+install_geodata
 configure_passwall2
-download_geodata
+setup_cron
 finish
-
