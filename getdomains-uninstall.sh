@@ -117,8 +117,13 @@ fi
 
 uci commit network 2>/dev/null || true
 
-# Remove sing-box config (optional - keep it)
-# rm -rf /etc/sing-box/config.json
+# Remove sing-box config
+info "Removing sing-box config..."
+rm -f /etc/sing-box/config.json
+
+# Remove sing-box package
+info "Removing sing-box package..."
+opkg remove sing-box 2>/dev/null || true
 
 # Restart services
 info "Restarting services..."
@@ -132,9 +137,9 @@ header "  Uninstall complete"
 header "=========================================="
 echo ""
 echo "The following was NOT removed:"
-echo "  - Packages (sing-box, dnsmasq-full, stubby)"
-echo "  - sing-box config (/etc/sing-box/config.json)"
+echo "  - dnsmasq-full (required by other services)"
+echo "  - stubby (optional, remove manually if not needed)"
 echo ""
-echo "To fully remove packages:"
-echo "  opkg remove sing-box stubby"
+echo "To remove remaining packages:"
+echo "  opkg remove stubby dnsmasq-full"
 echo ""
