@@ -18,14 +18,15 @@ header "  Domain Routing Uninstall"
 header "=========================================="
 echo ""
 
-echo "This will remove:"
-echo "  - sing-box configuration"
+echo "This will remove (full cleanup):"
+echo "  - sing-box (package + config)"
+echo "  - stubby (package)"
+echo "  - dnsmasq-full (package, will be replaced by dnsmasq)"
 echo "  - Firewall rules (zone, forwarding, ipset)"
 echo "  - Routing rules"
 echo "  - getdomains script and cron job"
 echo "  - Domain lists"
-echo ""
-echo "Packages (sing-box, dnsmasq-full, stubby) will NOT be removed."
+echo "  - LuCI VPN domains helper"
 echo ""
 printf "Continue? [y/N]: "
 read CONFIRM
@@ -124,9 +125,27 @@ uci commit network 2>/dev/null || true
 info "Removing sing-box config and package..."
 rm -f /etc/sing-box/config.json
 opkg remove sing-box 2>/dev/null || true
-# opkg leaves modified conffiles — remove them manually
 rm -f /etc/config/sing-box
 rm -rf /etc/sing-box
+
+# Remove stubby and reset DNS (was pointing to stubby)
+info "Removing stubby..."
+/etc/init.d/stubby stop 2>/dev/null || true
+/etc/init.d/stubby disable 2>/dev/null || true
+opkg remove stubby 2>/dev/null || true
+uci -q delete dhcp.@dnsmasq[0].noresolv 2>/dev/null || true
+uci -q delete dhcp.@dnsmasq[0].server 2>/dev/null || true
+uci commit dhcp 2>/dev/null || true
+
+# Replace dnsmasq-full with dnsmasq (so DNS still works)
+info "Replacing dnsmasq-full with dnsmasq..."
+if opkg list-installed 2>/dev/null | grep -q "^dnsmasq-full "; then
+    cd /tmp 2>/dev/null || true
+    opkg download dnsmasq 2>/dev/null || true
+    opkg remove dnsmasq-full 2>/dev/null || true
+    opkg install dnsmasq --cache /tmp/ 2>/dev/null || true
+    [ -f /etc/config/dhcp-opkg ] && mv /etc/config/dhcp-opkg /etc/config/dhcp 2>/dev/null || true
+fi
 
 # Restart services
 info "Restarting services..."
@@ -136,13 +155,9 @@ info "Restarting services..."
 
 echo ""
 header "=========================================="
-header "  Uninstall complete"
+header "  Full uninstall complete"
 header "=========================================="
 echo ""
-echo "The following was NOT removed:"
-echo "  - dnsmasq-full (required by other services)"
-echo "  - stubby (optional, remove manually if not needed)"
-echo ""
-echo "To remove remaining packages:"
-echo "  opkg remove stubby dnsmasq-full"
+echo "Removed: sing-box, stubby, dnsmasq-full, all configs and rules."
+echo "Installed: dnsmasq (basic DNS)."
 echo ""
