@@ -27,6 +27,11 @@ esac
 echo "Архитектура: $ARCH"
 echo "OpenWrt: ${VERSION_ID:-unknown}"
 
+# Помощь opkg с SourceForge: редиректы и IPv4 (на части роутеров без этого feeds не тянутся)
+if [ -d /etc/opkg.d ]; then
+    echo "option wget_options '-L -4'" > /etc/opkg.d/99-passwall-feeds.conf 2>/dev/null || true
+fi
+
 # Feeds
 FEED_FILE="/etc/opkg/customfeeds.conf"
 touch "$FEED_FILE"
