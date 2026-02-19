@@ -37,8 +37,10 @@ fi
 echo "OpenWrt $DISTRIB_RELEASE, архитектура: $ARCH"
 echo ""
 
-# Отключить проверку подписи (фиды Passwall с SourceForge не подписаны ключом OpenWrt)
-grep -q 'check_signature 0' /etc/opkg.conf 2>/dev/null || echo 'option check_signature 0' >> /etc/opkg.conf
+# Принудительно отключить проверку подписи (фиды Passwall не подписаны ключом OpenWrt)
+sed -i '/check_signature/d' /etc/opkg.conf 2>/dev/null
+echo 'option check_signature 0' >> /etc/opkg.conf
+
 # Опции opkg для SourceForge (редиректы, IPv4)
 if [ -d /etc/opkg.d ]; then
     echo "option wget_options '-L -4'" > /etc/opkg.d/99-passwall-feeds.conf 2>/dev/null || true
@@ -53,6 +55,9 @@ sed -i '/passwall2/d'   "$FEED_FILE" 2>/dev/null
 echo "src/gz passwall_packages ${PW_BASE}/${ARCH}/passwall_packages" >> "$FEED_FILE"
 echo "src/gz passwall2         ${PW_BASE}/${ARCH}/passwall2"         >> "$FEED_FILE"
 
+# Удалить старые списки Passwall, чтобы opkg заново скачал их без проверки подписи
+rm -f /var/opkg-lists/passwall_packages /var/opkg-lists/passwall2 2>/dev/null
+
 echo "Обновление списка пакетов..."
 if ! opkg update 2>&1 | tee /tmp/opkg-update.log; then
     echo "Ошибка: opkg update не удался. См. /tmp/opkg-update.log"
@@ -60,8 +65,16 @@ if ! opkg update 2>&1 | tee /tmp/opkg-update.log; then
 fi
 
 if ! opkg list 2>/dev/null | grep -q "^luci-app-passwall2 "; then
-    echo "Ошибка: пакет luci-app-passwall2 не найден в списке. Проверь доступ к SourceForge."
-    echo "Проверка: wget -4 -q -O- \"${PW_BASE}/${ARCH}/passwall2/Packages.gz\" | head -c 100"
+    echo "Ошибка: пакет luci-app-passwall2 не найден в списке."
+    echo ""
+    echo "Отладка: check_signature в opkg.conf:"
+    grep -n check_signature /etc/opkg.conf 2>/dev/null || true
+    echo "Списки Passwall в /var/opkg-lists:"
+    ls -la /var/opkg-lists/passwall* 2>/dev/null || echo "(нет файлов)"
+    echo "Пакеты с passwall в opkg list:"
+    opkg list 2>/dev/null | grep -i passwall || echo "(ничего)"
+    echo ""
+    echo "Проверка доступа: wget -4 -q -O- \"${PW_BASE}/${ARCH}/passwall2/Packages.gz\" | zcat | grep -A1 'Package: luci-app-passwall2'"
     exit 1
 fi
 
