@@ -8,7 +8,7 @@
 |---|---|---|
 | VPN клиент | Passwall2 + Xray | Sing-box |
 | Протоколы | VLESS XHTTP Reality + Hysteria 2 | VLESS Reality + Hysteria 2 |
-| Балансировка | Auto-Balancer (leastPing) | urltest |
+| Балансировка | Balancer (leastPing, настраивается в LuCI) | urltest |
 | Управление | LuCI веб-интерфейс | SSH + конфиг файл |
 | Список доменов | geosite:ru-blocked (runetfreedom, авто-обновление) | itdoginfo (cron каждые 8ч) |
 | Кастомные домены | PassWall2 → Rule Manage → Custom VPN Domains | LuCI: Services → VPN Domains |
@@ -36,17 +36,25 @@ sh <(wget -O - https://raw.githubusercontent.com/BalgeetTjinder/domain-routing-o
    - `Node List` → Add the node via the link → вставь `vless://...` или `hy2://...` ссылку
    - `Node List` → Add → заполни вручную
 
-2. **Добавь ноды в балансировщик:**
-   - Открой **Auto-Balancer** → добавь свои VLESS и Hysteria2 ноды
-   - Стратегия leastPing — автоматически выбирает самый быстрый протокол
+2. **Создай Shunt ноду** (Node List → Add):
+   - Type: **Xray**, Protocol: **Shunt**
+   - `Russia_Block` → твоя VPN нода
+   - `Custom VPN Domains` → твоя VPN нода
+   - `Default` → Direct Connection
+   - Save & Apply
 
-3. **Включи:**
-   - `Basic Settings` → Enable → Save & Apply
+3. **(Опционально) Создай Balancer ноду** для авто-переключения:
+   - Node List → Add → Type: **Xray**, Protocol: **Balancer**
+   - Добавь свои VLESS + Hysteria2 ноды, стратегия: **leastPing**
+   - Используй этот балансер в шаге 2 вместо отдельных нод
 
-Маршрутизация уже преднастроена скриптом:
-- `Russia_Block` (geosite:ru-blocked + geoip:ru-blocked) → Auto-Balancer → VPN
-- `Custom VPN Domains` → Auto-Balancer → VPN
-- Всё остальное → Direct (без VPN)
+4. **Basic Settings** → Main Node = твоя Shunt нода → **Enable** → Save & Apply
+
+Скрипт преднастраивает:
+- Shunt rule `Russia_Block`: geosite:ru-blocked + geoip:ru-blocked
+- Shunt rule `Custom VPN Domains`: пустой (добавь свои домены)
+- Geodata из runetfreedom (авто-обновление каждые 6ч)
+- Фикс /tmp exec (необходим для запуска бинарников PassWall2)
 
 ### Что устанавливается
 
@@ -63,11 +71,11 @@ sh <(wget -O - https://raw.githubusercontent.com/BalgeetTjinder/domain-routing-o
 ```
 Запрос к youtube.com
         ↓
-Passwall2 → Main-Shunt проверяет домен
+Passwall2 → Shunt нода проверяет домен
         ↓
-Домен в geosite:ru-blocked? → Auto-Balancer → лучший из VLESS/Hysteria2 → VPS
+Домен в geosite:ru-blocked?     → VPN нода (или Balancer) → VPS
         ↓
-Домен в Custom VPN Domains? → Auto-Balancer → VPS
+Домен в Custom VPN Domains?     → VPN нода (или Balancer) → VPS
         ↓
 Нет → прямое соединение (Direct)
 ```

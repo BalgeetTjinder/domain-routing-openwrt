@@ -1,8 +1,8 @@
 #!/bin/sh
 
 # PassWall2 Installer for OpenWrt
-# Shunt routing: Russia_Block + Custom VPN Domains → VPN, Default → Direct
-# Geo source: runetfreedom (auto-updated every 6h)
+# Installs packages, runetfreedom geodata, pre-creates shunt rules
+# User configures nodes and balancer in LuCI after install
 # https://github.com/BalgeetTjinder/domain-routing-openwrt
 
 set -e
@@ -44,6 +44,28 @@ check_system() {
             die "OpenWrt 23.05+ required (detected ${DISTRIB_RELEASE})"
         fi
     fi
+}
+
+# ── Fix /tmp noexec ───────────────────────────────────────────────────
+# PassWall2 copies and runs binaries from /tmp/etc/passwall2/bin/.
+# Many OpenWrt builds mount /tmp with noexec, which blocks this.
+# We remount now AND install a persistent init.d service (START=10)
+# that runs before passwall2 (START=99) on every boot.
+
+fix_tmp_exec() {
+    info "Fixing /tmp exec permissions..."
+    mount -o remount,exec /tmp 2>/dev/null || true
+
+    cat > /etc/init.d/passwall2-fix-tmp << 'INITEOF'
+#!/bin/sh /etc/rc.common
+START=10
+start() {
+    mount -o remount,exec /tmp 2>/dev/null
+}
+INITEOF
+    chmod +x /etc/init.d/passwall2-fix-tmp
+    /etc/init.d/passwall2-fix-tmp enable 2>/dev/null || true
+    info "/tmp exec: fixed now + persistent on boot"
 }
 
 # ── PassWall2 opkg feeds (SourceForge pre-built packages) ────────────
@@ -88,7 +110,7 @@ install_packages() {
 
     # dnsmasq-full: ipset/nftset support required for domain-based routing
     if ! opkg list-installed 2>/dev/null | grep -q "^dnsmasq-full "; then
-        info "Replacing dnsmasq → dnsmasq-full..."
+        info "Replacing dnsmasq -> dnsmasq-full..."
         cd /tmp
         opkg download dnsmasq-full >/dev/null 2>&1 || true
         opkg remove dnsmasq 2>/dev/null || true
@@ -108,13 +130,8 @@ install_packages() {
     info "Installing hysteria..."
     opkg install hysteria || warn "hysteria install failed (optional)"
 
-    # geoview: generates sing-box rulesets from .dat geo files
     opkg install geoview 2>/dev/null || true
-
-    # v2ray geodata packages (creates /usr/share/v2ray/; files overwritten below)
     opkg install v2ray-geoip v2ray-geosite 2>/dev/null || true
-
-    # nftables kernel modules for transparent proxy (fw4)
     opkg install kmod-nft-socket kmod-nft-tproxy 2>/dev/null || true
 
     info "All packages installed"
@@ -135,30 +152,13 @@ install_geodata() {
     info "Geodata ready (geosite:ru-blocked, geoip:ru-blocked, ...)"
 }
 
-# ── Fix /tmp noexec (PassWall2 runs binaries from /tmp) ───────────────
-
-fix_tmp_exec() {
-    info "Ensuring /tmp allows execution (required for PassWall2 binaries)..."
-    mount -o remount,exec /tmp 2>/dev/null || true
-
-    cat > /etc/init.d/passwall2-fix-tmp << 'INITEOF'
-#!/bin/sh /etc/rc.common
-START=10
-start() {
-    mount -o remount,exec /tmp 2>/dev/null
-}
-INITEOF
-    chmod +x /etc/init.d/passwall2-fix-tmp
-    /etc/init.d/passwall2-fix-tmp enable 2>/dev/null || true
-    info "/tmp remounted with exec (persistent via init.d)"
-}
-
 # ── Configure PassWall2 via UCI ───────────────────────────────────────
+# Only create shunt RULES (data sections) — they work reliably via UCI.
+# Nodes (shunt, balancer) must be created in LuCI to get correct format.
 
 configure_passwall2() {
-    info "Configuring PassWall2 routing rules..."
+    info "Configuring PassWall2..."
 
-    # Stop service if running
     /etc/init.d/passwall2 stop 2>/dev/null || true
 
     # ── Global settings ──
@@ -172,12 +172,11 @@ configure_passwall2() {
     uci set passwall2.@global_forwarding[0].tcp_redir_ports='1:65535'
     uci set passwall2.@global_forwarding[0].udp_redir_ports='1:65535'
 
-    # ── Geo update URLs (LuCI → Rule Manage → Update buttons) ──
+    # ── Geo update URLs (LuCI -> Rule Manage -> Update buttons) ──
     uci set passwall2.@global_rules[0].geosite_url="${RUNETFREEDOM_URL}/geosite.dat" 2>/dev/null || true
     uci set passwall2.@global_rules[0].geoip_url="${RUNETFREEDOM_URL}/geoip.dat" 2>/dev/null || true
 
     # ── Shunt rule: Russia_Block ──
-    # Matches domains/IPs blocked in Russia → routed through VPN
     uci set passwall2.Russia_Block=shunt_rules
     uci set passwall2.Russia_Block.remarks='Russia_Block'
     uci set passwall2.Russia_Block.network='tcp,udp'
@@ -185,33 +184,12 @@ configure_passwall2() {
     uci set passwall2.Russia_Block.ip_list='geoip:ru-blocked'
 
     # ── Shunt rule: Custom_VPN ──
-    # User adds domains via LuCI → Rule Manage → Edit this rule → Domain List
     uci set passwall2.Custom_VPN=shunt_rules
     uci set passwall2.Custom_VPN.remarks='Custom VPN Domains'
     uci set passwall2.Custom_VPN.network='tcp,udp'
 
-    # ── Node: Auto-Balancer (leastPing across VLESS + Hysteria2) ──
-    # After install, user adds their VPN nodes to this balancer via LuCI
-    uci set passwall2.autobalancer=nodes
-    uci set passwall2.autobalancer.remarks='Auto-Balancer'
-    uci set passwall2.autobalancer.type='Xray'
-    uci set passwall2.autobalancer.protocol='_balancer'
-    uci set passwall2.autobalancer.balancingStrategy='leastPing'
-
-    # ── Node: Main-Shunt (routing logic) ──
-    uci set passwall2.myshunt=nodes
-    uci set passwall2.myshunt.remarks='Main-Shunt'
-    uci set passwall2.myshunt.type='Xray'
-    uci set passwall2.myshunt.protocol='_shunt'
-    uci set passwall2.myshunt.default='_direct'
-    uci set passwall2.myshunt.Russia_Block='autobalancer'
-    uci set passwall2.myshunt.Custom_VPN='autobalancer'
-
-    # ── Activate shunt as main node (service stays disabled) ──
-    uci set passwall2.@global[0].node='myshunt'
-
     uci commit passwall2
-    info "PassWall2 routing configured"
+    info "Shunt rules created (Russia_Block + Custom VPN Domains)"
 }
 
 # ── Geodata auto-update cron (every 6h) ──────────────────────────────
@@ -268,28 +246,33 @@ finish() {
     header "  PassWall2 installed successfully!"
     header "=========================================="
     echo ""
-    echo "NEXT STEPS:"
+    echo "NEXT STEPS (in LuCI -> Services -> PassWall2):"
+    echo "http://${LAN_IP}/cgi-bin/luci/admin/services/passwall2"
     echo ""
-    echo "1. Open LuCI -> Services -> PassWall2"
-    echo "   http://${LAN_IP}/cgi-bin/luci/admin/services/passwall2"
+    echo "1. Add your VPN nodes:"
+    echo "   Node Subscribe -> Add -> paste URL -> Save & Apply -> Manual subscription"
+    echo "   Or: Node List -> Add the node via the link -> paste vless://... or hy2://..."
     echo ""
-    echo "2. Add your VPN nodes (any method):"
-    echo "   - Node Subscribe -> Add -> paste URL -> Save & Apply -> Manual subscription"
-    echo "   - Node List -> Add the node via the link -> paste vless://... or hy2://..."
-    echo "   - Node List -> Add -> fill in manually"
+    echo "2. Create a Shunt node (Node List -> Add):"
+    echo "   - Type: Xray"
+    echo "   - Protocol: Shunt"
+    echo "   - Russia_Block    -> your VPN node (or a balancer)"
+    echo "   - Custom VPN      -> your VPN node (or a balancer)"
+    echo "   - Default         -> Direct Connection"
+    echo "   Save & Apply"
     echo ""
-    echo "3. Edit 'Auto-Balancer' node:"
-    echo "   - Add your VLESS and Hysteria2 nodes to it"
-    echo "   - Strategy: leastPing (auto-selects fastest protocol)"
+    echo "3. (Optional) Create a Balancer node for auto-failover:"
+    echo "   Node List -> Add -> Type: Xray, Protocol: Balancer"
+    echo "   -> add VLESS + Hysteria2 nodes, strategy: leastPing"
+    echo "   Then use this balancer in step 2 instead of individual nodes"
     echo ""
-    echo "4. Basic Settings -> Enable -> Save & Apply"
+    echo "4. Basic Settings -> Main Node = your Shunt node -> Enable -> Save & Apply"
     echo ""
-    echo "PRE-CONFIGURED ROUTING:"
-    echo "  Russia_Block (geosite:ru-blocked + geoip:ru-blocked) -> VPN"
-    echo "  Custom VPN Domains (add yours in Rule Manage)       -> VPN"
-    echo "  Everything else                                     -> Direct"
-    echo ""
-    echo "Geodata: runetfreedom (auto-updates every 6h)"
+    echo "PRE-CONFIGURED by this script:"
+    echo "  - Shunt rule 'Russia_Block':      geosite:ru-blocked + geoip:ru-blocked"
+    echo "  - Shunt rule 'Custom VPN Domains': add your domains in Rule Manage"
+    echo "  - Geodata: runetfreedom (auto-updates every 6h)"
+    echo "  - /tmp exec fix (persistent across reboots)"
     echo ""
 }
 
@@ -298,11 +281,10 @@ finish() {
 echo ""
 header "=========================================="
 header "  PassWall2 Installer"
-header "  VLESS + Hysteria2 | leastPing balancer"
 header "=========================================="
 echo ""
 
-printf "Install PassWall2 with pre-configured Russia routing? [y/N]: "
+printf "Install PassWall2 with Russia routing presets? [y/N]: "
 read CONFIRM
 case ${CONFIRM} in
     [yY]|[yY][eE][sS]) ;;
@@ -311,10 +293,10 @@ esac
 echo ""
 
 check_system
+fix_tmp_exec
 add_feeds
 install_packages
 install_geodata
-fix_tmp_exec
 configure_passwall2
 setup_cron
 finish
