@@ -37,12 +37,11 @@ fi
 echo "OpenWrt $DISTRIB_RELEASE, архитектура: $ARCH"
 echo ""
 
-# Опции opkg для SourceForge (редиректы, IPv4, без проверки подписи)
+# Отключить проверку подписи (фиды Passwall с SourceForge не подписаны ключом OpenWrt)
+grep -q 'check_signature 0' /etc/opkg.conf 2>/dev/null || echo 'option check_signature 0' >> /etc/opkg.conf
+# Опции opkg для SourceForge (редиректы, IPv4)
 if [ -d /etc/opkg.d ]; then
-    {
-        echo "option wget_options '-L -4'"
-        echo "option check_signature 0"
-    } > /etc/opkg.d/99-passwall-feeds.conf 2>/dev/null || true
+    echo "option wget_options '-L -4'" > /etc/opkg.d/99-passwall-feeds.conf 2>/dev/null || true
 fi
 
 # Один feed для 23.05
@@ -86,5 +85,5 @@ opkg install kmod-nft-socket kmod-nft-tproxy xray-core hysteria luci-app-passwal
 
 echo ""
 echo "Готово. LuCI → Services → PassWall2"
-echo "Ключ/подпись: /etc/opkg.d/99-passwall-feeds.conf (check_signature 0). При желании удали после установки."
+echo "Проверка подписи opkg отключена в /etc/opkg.conf (option check_signature 0). При желании верни 1 после установки."
 echo ""
