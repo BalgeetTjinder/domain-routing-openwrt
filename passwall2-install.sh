@@ -43,8 +43,7 @@ for SERIES in $CANDIDATES; do
     echo "src/gz passwall_packages ${PW_BASE}/passwall_packages" >> "$FEED_FILE"
     echo "src/gz passwall2 ${PW_BASE}/passwall2" >> "$FEED_FILE"
 
-    opkg update >/dev/null 2>&1 || true
-
+    opkg update 2>&1 | tee /tmp/opkg-update.log || true
     if opkg list 2>/dev/null | grep -q "^luci-app-passwall2 -"; then
         SELECTED="$SERIES"
         break
@@ -53,9 +52,12 @@ done
 
 if [ -z "$SELECTED" ]; then
     echo "Ошибка: не удалось подключить passwall feeds ни для 24.10, ни для 23.05."
-    echo "Проверь доступ к SourceForge с роутера:"
-    echo "  wget -O- https://downloads.sourceforge.net/project/openwrt-passwall-build/releases/packages-24.10/${ARCH}/passwall2/Packages.gz >/dev/null && echo OK || echo FAIL"
-    echo "  wget -O- https://downloads.sourceforge.net/project/openwrt-passwall-build/releases/packages-23.05/${ARCH}/passwall2/Packages.gz >/dev/null && echo OK || echo FAIL"
+    echo "Лог opkg update сохранён в /tmp/opkg-update.log — посмотри причину."
+    echo ""
+    echo "Проверь доступ к SourceForge с роутера (ARCH=$ARCH):"
+    echo "  wget -q -O- \"https://downloads.sourceforge.net/project/openwrt-passwall-build/releases/packages-23.05/${ARCH}/passwall2/Packages.gz\" && echo OK || echo FAIL"
+    echo "Если FAIL — роутер не достучится до SourceForge (фаервол, только IPv6 и т.п.)."
+    echo "Попробуй принудительно IPv4: wget -4 -q -O- \"...Packages.gz\" && echo OK"
     exit 1
 fi
 
