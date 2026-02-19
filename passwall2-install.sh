@@ -138,21 +138,19 @@ install_geodata() {
 # ── Fix /tmp noexec (PassWall2 runs binaries from /tmp) ───────────────
 
 fix_tmp_exec() {
-    if mount | grep -q "on /tmp .*noexec"; then
-        info "Fixing /tmp noexec (required for PassWall2 binaries)..."
-        mount -o remount,exec /tmp
+    info "Ensuring /tmp allows execution (required for PassWall2 binaries)..."
+    mount -o remount,exec /tmp 2>/dev/null || true
 
-        cat > /etc/init.d/passwall2-fix-tmp << 'INITEOF'
+    cat > /etc/init.d/passwall2-fix-tmp << 'INITEOF'
 #!/bin/sh /etc/rc.common
 START=10
 start() {
-    mount | grep -q "on /tmp .*noexec" && mount -o remount,exec /tmp
+    mount -o remount,exec /tmp 2>/dev/null
 }
 INITEOF
-        chmod +x /etc/init.d/passwall2-fix-tmp
-        /etc/init.d/passwall2-fix-tmp enable 2>/dev/null || true
-        info "/tmp remounted with exec (persistent via init.d)"
-    fi
+    chmod +x /etc/init.d/passwall2-fix-tmp
+    /etc/init.d/passwall2-fix-tmp enable 2>/dev/null || true
+    info "/tmp remounted with exec (persistent via init.d)"
 }
 
 # ── Configure PassWall2 via UCI ───────────────────────────────────────
