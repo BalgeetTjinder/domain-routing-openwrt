@@ -13,6 +13,7 @@ opkg remove luci-app-passwall2 xray-core hysteria kmod-nft-tproxy kmod-nft-socke
 echo "Удаление feeds..."
 sed -i '/passwall_packages/d' /etc/opkg/customfeeds.conf 2>/dev/null
 sed -i '/passwall2/d' /etc/opkg/customfeeds.conf 2>/dev/null
+rm -f /etc/opkg.d/99-passwall-feeds.conf 2>/dev/null
 
 echo "Очистка LuCI..."
 rm -f /tmp/luci-indexcache
