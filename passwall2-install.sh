@@ -32,6 +32,17 @@ if [ -d /etc/opkg.d ]; then
     echo "option wget_options '-L -4'" > /etc/opkg.d/99-passwall-feeds.conf 2>/dev/null || true
 fi
 
+# Ключ подписи passwall-build — без него opkg отклоняет feeds (Signature check failed)
+echo "Добавление ключа подписи passwall-build..."
+if command -v opkg-key >/dev/null 2>&1; then
+    wget -q -L -4 -O /tmp/passwall.pub "https://downloads.sourceforge.net/project/openwrt-passwall-build/passwall.pub" 2>/dev/null || \
+        wget -q -L -O /tmp/passwall.pub "https://downloads.sourceforge.net/project/openwrt-passwall-build/passwall.pub" 2>/dev/null || true
+    if [ -s /tmp/passwall.pub ]; then
+        opkg-key add /tmp/passwall.pub 2>/dev/null || true
+        rm -f /tmp/passwall.pub
+    fi
+fi
+
 # Feeds
 FEED_FILE="/etc/opkg/customfeeds.conf"
 touch "$FEED_FILE"
@@ -58,6 +69,7 @@ done
 if [ -z "$SELECTED" ]; then
     echo "Ошибка: не удалось подключить passwall feeds ни для 24.10, ни для 23.05."
     echo "Лог opkg update сохранён в /tmp/opkg-update.log — посмотри причину."
+    echo "Если в логе «Signature check failed» — ключ passwall.pub не подошёл или opkg-key недоступен."
     echo ""
     echo "Проверь доступ к SourceForge с роутера (ARCH=$ARCH):"
     echo "  wget -q -O- \"https://downloads.sourceforge.net/project/openwrt-passwall-build/releases/packages-23.05/${ARCH}/passwall2/Packages.gz\" && echo OK || echo FAIL"
