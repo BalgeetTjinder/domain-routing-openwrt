@@ -135,6 +135,26 @@ install_geodata() {
     info "Geodata ready (geosite:ru-blocked, geoip:ru-blocked, ...)"
 }
 
+# ── Fix /tmp noexec (PassWall2 runs binaries from /tmp) ───────────────
+
+fix_tmp_exec() {
+    if mount | grep -q "on /tmp .*noexec"; then
+        info "Fixing /tmp noexec (required for PassWall2 binaries)..."
+        mount -o remount,exec /tmp
+
+        cat > /etc/init.d/passwall2-fix-tmp << 'INITEOF'
+#!/bin/sh /etc/rc.common
+START=10
+start() {
+    mount | grep -q "on /tmp .*noexec" && mount -o remount,exec /tmp
+}
+INITEOF
+        chmod +x /etc/init.d/passwall2-fix-tmp
+        /etc/init.d/passwall2-fix-tmp enable 2>/dev/null || true
+        info "/tmp remounted with exec (persistent via init.d)"
+    fi
+}
+
 # ── Configure PassWall2 via UCI ───────────────────────────────────────
 
 configure_passwall2() {
@@ -296,6 +316,7 @@ check_system
 add_feeds
 install_packages
 install_geodata
+fix_tmp_exec
 configure_passwall2
 setup_cron
 finish

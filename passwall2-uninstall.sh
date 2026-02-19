@@ -100,6 +100,8 @@ fi
 
 info "Removing PassWall2 shared files..."
 rm -f /etc/init.d/passwall2 2>/dev/null || true
+/etc/init.d/passwall2-fix-tmp disable 2>/dev/null || true
+rm -f /etc/init.d/passwall2-fix-tmp 2>/dev/null || true
 rm -rf /usr/share/passwall2 2>/dev/null || true
 
 # Lua modules and LuCI views
