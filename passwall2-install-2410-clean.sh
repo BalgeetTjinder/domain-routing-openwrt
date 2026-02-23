@@ -34,12 +34,12 @@ sed -i '/check_signature/d' /etc/opkg.conf 2>/dev/null
 echo "option wget_options '-L -4'" >> /etc/opkg.conf
 echo "option check_signature 0" >> /etc/opkg.conf
 
-mkdir -p /etc/opkg.d 2>/dev/null || true
-CONF="/etc/opkg.d/99-passwall2-clean.conf"
-cat > "$CONF" <<EOF
-src/gz passwall_packages ${PW_BASE}/${ARCH}/passwall_packages
-src/gz passwall2 ${PW_BASE}/${ARCH}/passwall2
-EOF
+FEED_FILE="/etc/opkg/customfeeds.conf"
+touch "$FEED_FILE"
+sed -i '/passwall_packages/d' "$FEED_FILE" 2>/dev/null
+sed -i '/passwall2/d' "$FEED_FILE" 2>/dev/null
+echo "src/gz passwall_packages ${PW_BASE}/${ARCH}/passwall_packages" >> "$FEED_FILE"
+echo "src/gz passwall2 ${PW_BASE}/${ARCH}/passwall2" >> "$FEED_FILE"
 
 opkg update
 
@@ -50,7 +50,7 @@ if ! opkg list 2>/dev/null | grep -q "^luci-app-passwall2 "; then
     exit 1
 fi
 
-opkg install luci-app-passwall2 xray-core kmod-nft-socket kmod-nft-tproxy hysteria 2>/dev/null || \
+opkg install luci-app-passwall2 xray-core kmod-nft-socket kmod-nft-tproxy hysteria || \
 opkg install luci-app-passwall2 xray-core kmod-nft-socket kmod-nft-tproxy hysteria2
 
 echo ""
