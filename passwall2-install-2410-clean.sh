@@ -28,10 +28,9 @@ fi
 echo "OpenWrt: $VERSION_ID"
 echo "ARCH: $ARCH"
 
-# Минимально необходимые опции для SourceForge (редиректы, IPv4, без проверки подписи)
+# Минимально необходимые опции: без проверки подписи (Passwall feeds с SourceForge подписаны не ключом OpenWrt)
 sed -i '/wget_options/d' /etc/opkg.conf 2>/dev/null
 sed -i '/check_signature/d' /etc/opkg.conf 2>/dev/null
-echo "option wget_options '-L -4'" >> /etc/opkg.conf
 echo "option check_signature 0" >> /etc/opkg.conf
 
 FEED_FILE="/etc/opkg/customfeeds.conf"
