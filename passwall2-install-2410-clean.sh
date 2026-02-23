@@ -28,17 +28,29 @@ fi
 echo "OpenWrt: $VERSION_ID"
 echo "ARCH: $ARCH"
 
+# Минимально необходимые опции для SourceForge (редиректы, IPv4, без проверки подписи)
+sed -i '/wget_options/d' /etc/opkg.conf 2>/dev/null
+sed -i '/check_signature/d' /etc/opkg.conf 2>/dev/null
+echo "option wget_options '-L -4'" >> /etc/opkg.conf
+echo "option check_signature 0" >> /etc/opkg.conf
+
+mkdir -p /etc/opkg.d 2>/dev/null || true
 CONF="/etc/opkg.d/99-passwall2-clean.conf"
 cat > "$CONF" <<EOF
-option wget_options '-L -4'
-option check_signature 0
 src/gz passwall_packages ${PW_BASE}/${ARCH}/passwall_packages
 src/gz passwall2 ${PW_BASE}/${ARCH}/passwall2
 EOF
 
 opkg update
 
-opkg install luci-app-passwall2 xray-core kmod-nft-socket kmod-nft-tproxy hysteria || \
+if ! opkg list 2>/dev/null | grep -q "^luci-app-passwall2 "; then
+    echo "Ошибка: luci-app-passwall2 не найден в списке пакетов после opkg update."
+    echo "Проверь доступ к SourceForge:"
+    echo "  wget -4 -qO- \"${PW_BASE}/${ARCH}/passwall2/Packages.gz\" >/dev/null && echo OK || echo FAIL"
+    exit 1
+fi
+
+opkg install luci-app-passwall2 xray-core kmod-nft-socket kmod-nft-tproxy hysteria 2>/dev/null || \
 opkg install luci-app-passwall2 xray-core kmod-nft-socket kmod-nft-tproxy hysteria2
 
 echo ""
