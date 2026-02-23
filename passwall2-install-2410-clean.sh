@@ -29,9 +29,16 @@ echo "OpenWrt: $VERSION_ID"
 echo "ARCH: $ARCH"
 
 # Минимально необходимые опции: без проверки подписи (Passwall feeds с SourceForge подписаны не ключом OpenWrt)
-sed -i '/wget_options/d' /etc/opkg.conf 2>/dev/null
-sed -i '/check_signature/d' /etc/opkg.conf 2>/dev/null
-echo "option check_signature 0" >> /etc/opkg.conf
+# ВАЖНО: на некоторых сборках opkg НЕ понимает wget_options -> из-за ошибки парсинга check_signature 0 не применяется.
+OPKG_CONF="/etc/opkg.conf"
+TMP_CONF="/tmp/opkg.conf.$$"
+if [ -f "$OPKG_CONF" ]; then
+    # Удаляем любые строки с wget_options/check_signature и добавляем check_signature 0 в конец.
+    # Делается через временный файл, потому что sed -i может не сработать на некоторых системах.
+    grep -v -E '^[[:space:]]*option[[:space:]]+(wget_options|check_signature)[[:space:]]' "$OPKG_CONF" > "$TMP_CONF" 2>/dev/null || cp "$OPKG_CONF" "$TMP_CONF"
+    echo "option check_signature 0" >> "$TMP_CONF"
+    mv "$TMP_CONF" "$OPKG_CONF"
+fi
 
 FEED_FILE="/etc/opkg/customfeeds.conf"
 touch "$FEED_FILE"
@@ -40,6 +47,7 @@ sed -i '/passwall2/d' "$FEED_FILE" 2>/dev/null
 echo "src/gz passwall_packages ${PW_BASE}/${ARCH}/passwall_packages" >> "$FEED_FILE"
 echo "src/gz passwall2 ${PW_BASE}/${ARCH}/passwall2" >> "$FEED_FILE"
 
+rm -f /var/opkg-lists/passwall_packages /var/opkg-lists/passwall2 2>/dev/null
 opkg update
 
 if ! opkg list 2>/dev/null | grep -q "^luci-app-passwall2 "; then
