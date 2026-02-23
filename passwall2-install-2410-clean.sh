@@ -1,65 +1,49 @@
 #!/bin/sh
 #
-# Максимально чистая установка Passwall2 + Hysteria(2)
+# Чистая установка Passwall2 + Hysteria
 # Только OpenWrt 24.10.x
 #
 
-RELEASE_SERIES="24.10"
-PW_BASE="https://downloads.sourceforge.net/project/openwrt-passwall-build/releases/packages-${RELEASE_SERIES}"
+. /etc/openwrt_release 2>/dev/null || { echo "Ошибка: /etc/openwrt_release не найден"; exit 1; }
 
-if [ -f /etc/os-release ]; then
-    . /etc/os-release
-fi
-
-case "${VERSION_ID:-}" in
+case "$DISTRIB_RELEASE" in
     24.10.*) ;;
-    *)
-        echo "Ошибка: скрипт только для OpenWrt 24.10.x. У вас: ${VERSION_ID:-unknown}"
-        exit 1
-        ;;
+    *) echo "Ошибка: скрипт только для OpenWrt 24.10.x. У вас: $DISTRIB_RELEASE"; exit 1 ;;
 esac
 
-ARCH=$(sed -n 's|.*packages/\([^/]*\)/packages.*|\1|p' /etc/opkg/distfeeds.conf 2>/dev/null | head -1)
-if [ -z "$ARCH" ]; then
-    echo "Ошибка: не удалось определить архитектуру"
-    exit 1
-fi
+RELEASE="${DISTRIB_RELEASE%.*}"
+ARCH="$DISTRIB_ARCH"
+MIRROR="https://master.dl.sourceforge.net/project/openwrt-passwall-build"
 
-echo "OpenWrt: $VERSION_ID"
+echo "OpenWrt: $DISTRIB_RELEASE"
 echo "ARCH: $ARCH"
+echo ""
 
-# Минимально необходимые опции: без проверки подписи (Passwall feeds с SourceForge подписаны не ключом OpenWrt)
-# ВАЖНО: на некоторых сборках opkg НЕ понимает wget_options -> из-за ошибки парсинга check_signature 0 не применяется.
-OPKG_CONF="/etc/opkg.conf"
-TMP_CONF="/tmp/opkg.conf.$$"
-if [ -f "$OPKG_CONF" ]; then
-    # Удаляем любые строки с wget_options/check_signature и добавляем check_signature 0 в конец.
-    # Делается через временный файл, потому что sed -i может не сработать на некоторых системах.
-    grep -v -E '^[[:space:]]*option[[:space:]]+(wget_options|check_signature)[[:space:]]' "$OPKG_CONF" > "$TMP_CONF" 2>/dev/null || cp "$OPKG_CONF" "$TMP_CONF"
-    echo "option check_signature 0" >> "$TMP_CONF"
-    mv "$TMP_CONF" "$OPKG_CONF"
-fi
+# Убрать мусор от предыдущих попыток (wget_options / check_signature)
+sed -i '/wget_options/d' /etc/opkg.conf 2>/dev/null
+sed -i '/check_signature/d' /etc/opkg.conf 2>/dev/null
 
+# Публичный ключ Passwall (подпись будет проходить без отключения check_signature)
+echo "Добавление ключа Passwall..."
+wget -qO /tmp/passwall.pub "${MIRROR}/passwall.pub"
+opkg-key add /tmp/passwall.pub
+rm -f /tmp/passwall.pub
+
+# Фиды Passwall (master.dl — прямое зеркало без редиректов)
 FEED_FILE="/etc/opkg/customfeeds.conf"
 touch "$FEED_FILE"
 sed -i '/passwall_packages/d' "$FEED_FILE" 2>/dev/null
 sed -i '/passwall2/d' "$FEED_FILE" 2>/dev/null
-echo "src/gz passwall_packages ${PW_BASE}/${ARCH}/passwall_packages" >> "$FEED_FILE"
-echo "src/gz passwall2 ${PW_BASE}/${ARCH}/passwall2" >> "$FEED_FILE"
+echo "src/gz passwall_packages ${MIRROR}/releases/packages-${RELEASE}/${ARCH}/passwall_packages" >> "$FEED_FILE"
+echo "src/gz passwall2 ${MIRROR}/releases/packages-${RELEASE}/${ARCH}/passwall2" >> "$FEED_FILE"
 
-rm -f /var/opkg-lists/passwall_packages /var/opkg-lists/passwall2 2>/dev/null
+echo ""
+echo "opkg update..."
 opkg update
 
-if ! opkg list 2>/dev/null | grep -q "^luci-app-passwall2 "; then
-    echo "Ошибка: luci-app-passwall2 не найден в списке пакетов после opkg update."
-    echo "Проверь доступ к SourceForge:"
-    echo "  wget -4 -qO- \"${PW_BASE}/${ARCH}/passwall2/Packages.gz\" >/dev/null && echo OK || echo FAIL"
-    exit 1
-fi
-
-opkg install luci-app-passwall2 xray-core kmod-nft-socket kmod-nft-tproxy hysteria || \
-opkg install luci-app-passwall2 xray-core kmod-nft-socket kmod-nft-tproxy hysteria2
+echo ""
+echo "Установка пакетов..."
+opkg install luci-app-passwall2 xray-core kmod-nft-socket kmod-nft-tproxy hysteria
 
 echo ""
 echo "Готово. LuCI → Services → PassWall2"
-
