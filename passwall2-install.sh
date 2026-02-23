@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Passwall2 + Hysteria — установка
+# Passwall2 + Hysteria 2 — установка
 # OpenWrt 23.05+ / 24.10+
 
 if [ -f /etc/os-release ]; then
@@ -27,11 +27,14 @@ esac
 echo "Архитектура: $ARCH"
 echo "OpenWrt: ${VERSION_ID:-unknown}"
 
-# Опции opkg для passwall feeds: редиректы, IPv4, отключение проверки подписи (у SourceForge подпись не совпадает с ключом OpenWrt)
+# Принудительно отключить проверку подписи (фиды Passwall на SourceForge не подписаны ключом OpenWrt)
+sed -i '/check_signature/d' /etc/opkg.conf 2>/dev/null
+echo 'option check_signature 0' >> /etc/opkg.conf
+
+# Опции opkg для passwall feeds: редиректы, IPv4
 if [ -d /etc/opkg.d ]; then
     {
         echo "option wget_options '-L -4'"
-        echo "option check_signature 0"
     } > /etc/opkg.d/99-passwall-feeds.conf 2>/dev/null || true
 fi
 
@@ -51,6 +54,7 @@ for SERIES in $CANDIDATES; do
     echo "src/gz passwall_packages ${PW_BASE}/passwall_packages" >> "$FEED_FILE"
     echo "src/gz passwall2 ${PW_BASE}/passwall2" >> "$FEED_FILE"
 
+    rm -f /var/opkg-lists/passwall_packages /var/opkg-lists/passwall2 2>/dev/null
     opkg update 2>&1 | tee /tmp/opkg-update.log || true
     if opkg list 2>/dev/null | grep -q "^luci-app-passwall2 -"; then
         SELECTED="$SERIES"
@@ -71,6 +75,7 @@ fi
 
 echo "Используется feed: packages-${SELECTED}"
 echo "Обновление пакетов..."
+rm -f /var/opkg-lists/passwall_packages /var/opkg-lists/passwall2 2>/dev/null
 opkg update
 
 echo "Установка dnsmasq-full..."
@@ -88,5 +93,5 @@ opkg install kmod-nft-socket kmod-nft-tproxy xray-core hysteria luci-app-passwal
 echo ""
 echo "Готово. Открой LuCI → Services → PassWall2"
 echo ""
-echo "Примечание: в /etc/opkg.d/99-passwall-feeds.conf отключена проверка подписи (check_signature 0),"
-echo "чтобы feeds с SourceForge работали. Удали файл или верни check_signature 1, если нужна проверка снова."
+echo "Примечание: проверка подписи opkg отключена в /etc/opkg.conf (option check_signature 0),"
+echo "чтобы feeds с SourceForge работали. Верни 1 после установки, если нужна проверка."
